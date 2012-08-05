@@ -35,6 +35,10 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include "include/MPEG2TSExtractor.h"
 #include "include/WVMExtractor.h"
 
+#ifdef OMAP_ENHANCEMENT
+#include "include/ASFExtractor.h"
+#endif
+
 #include <binder/IPCThreadState.h>
 #include <binder/IServiceManager.h>
 #include <media/IMediaPlayerService.h>
@@ -70,6 +74,37 @@ static const size_t kHighWaterMarkBytes = 200000;
 static int64_t kVideoEarlyMarginUs = -10000LL;   //50 ms
 static int64_t kVideoLateMarginUs = 100000LL;  //100 ms
 static int64_t kVideoTooLateMarginUs = 500000LL;
+
+/*
+    To print the FPS, type this command on the console before starting playback:
+    setprop debug.video.showfps 1
+    To disable the prints, type:
+    setprop debug.video.showfps 0
+
+*/
+
+#ifdef OMAP_ENHANCEMENT
+
+static int mDebugFps = 0;
+static void debugShowFPS()
+{
+    static int mFrameCount = 0;
+    static int mLastFrameCount = 0;
+    static nsecs_t mLastFpsTime = 0;
+    static float mFps = 0;
+    mFrameCount++;
+    if (!(mFrameCount & 0x1F)) {
+        nsecs_t now = systemTime();
+        nsecs_t diff = now - mLastFpsTime;
+        mFps = ((mFrameCount - mLastFrameCount) * float(s2ns(1))) / diff;
+        mLastFpsTime = now;
+        mLastFrameCount = mFrameCount;
+        ALOGD("%d Frames, %f FPS", mFrameCount, mFps);
+    }
+    // XXX: mFPS has the value we want
+}
+
+#endif
 
 struct AwesomeEvent : public TimedEventQueue::Event {
     AwesomeEvent(
@@ -128,6 +163,12 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
             int32_t rotationDegrees)
         : mNativeWindow(nativeWindow) {
         applyRotation(rotationDegrees);
+#ifdef OMAP_ENHANCEMENT
+    char value[PROPERTY_VALUE_MAX];
+    property_get("debug.video.showfps", value, "0");
+    mDebugFps = atoi(value);
+    ALOGD_IF(mDebugFps, "showfps enabled");
+#endif
     }
 
     virtual void render(MediaBuffer *buffer) {
@@ -145,6 +186,11 @@ struct AwesomeNativeWindowRenderer : public AwesomeRenderer {
 
         sp<MetaData> metaData = buffer->meta_data();
         metaData->setInt32(kKeyRendered, 1);
+#ifdef OMAP_ENHANCEMENT
+        if (mDebugFps != 0) {
+          debugShowFPS();
+        }
+#endif
     }
 
 protected:
@@ -199,7 +245,13 @@ AwesomePlayer::AwesomePlayer()
       mVideoBuffer(NULL),
       mDecryptHandle(NULL),
       mLastVideoTimeUs(-1),
+#ifdef OMAP_ENHANCEMENT
+      mTextDriver(NULL),
+      mExtractor(NULL),
+      mExtractorType(NULL) {
+#else
       mTextDriver(NULL) {
+#endif
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -265,6 +317,9 @@ AwesomePlayer::~AwesomePlayer() {
     reset();
 
     mClient.disconnect();
+#ifdef OMAP_ENHANCEMENT
+    mExtractor.clear();
+#endif
 }
 
 void AwesomePlayer::cancelPlayerEvents(bool keepNotifications) {
@@ -382,6 +437,17 @@ status_t AwesomePlayer::setDataSource_l(
         checkDrmStatus(dataSource);
     }
 
+#ifdef OMAP_ENHANCEMENT
+    sp<MetaData> fileMetadata = extractor->getMetaData();
+    bool isAvailable = fileMetadata->findCString(kKeyMIMEType, &mExtractorType);
+    if(isAvailable) {
+        ALOGV("%s:: ExtractorType %s", __FUNCTION__,  mExtractorType);
+    } else {
+        ALOGV("%s:: ExtractorType not available", __FUNCTION__);
+    }
+    mExtractor = extractor;
+#endif
+
     return setDataSource_l(extractor);
 }
 
@@ -455,6 +521,12 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
                 mDisplayWidth = displayWidth;
                 mDisplayHeight = displayHeight;
             }
+#ifdef OMAP_ENHANCEMENT
+            else {
+                meta->findInt32(kKeyWidth, &mDisplayWidth);
+                meta->findInt32(kKeyHeight, &mDisplayHeight);
+            }
+#endif
 
             {
                 Mutex::Autolock autoLock(mStatsLock);
@@ -1282,7 +1354,15 @@ void AwesomePlayer::shutdownVideoDecoder_l() {
         usleep(1000);
     }
     IPCThreadState::self()->flushCommands();
+
+#ifdef OMAP_ENHANCEMENT
+    if (mDebugFps != 0) {
+        ALOGD("video decoder shutdown completed");
+    }
+#else
     ALOGV("video decoder shutdown completed");
+#endif
+
 }
 
 status_t AwesomePlayer::setNativeWindow_l(const sp<ANativeWindow> &native) {
@@ -1470,6 +1550,17 @@ status_t AwesomePlayer::initAudioDecoder() {
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         mAudioSource = mAudioTrack;
+#ifdef OMAP_ENHANCEMENT
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) {
+        const char *componentName  = "OMX.ITTIAM.WMA.decode";
+        mAudioSource = OMXCodec::Create(
+        mClient.interface(), mAudioTrack->getFormat(),
+        false,
+        mAudioTrack, componentName);
+        if (mAudioSource == NULL) {
+            ALOGE("Failed to create OMX component for WMA codec");
+        }
+#endif
     } else {
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
@@ -1889,8 +1980,15 @@ void AwesomePlayer::onVideoEvent() {
                 && mAudioPlayer != NULL
                 && mAudioPlayer->getMediaTimeMapping(
                     &realTimeUs, &mediaTimeUs)) {
+#ifdef OMAP_ENHANCEMENT
+            if (mDebugFps != 0) {
+                ALOGD("we're much too late (%.2f secs), video skipping ahead",
+                      latenessUs / 1E6);
+            }
+#else
             ALOGI("we're much too late (%.2f secs), video skipping ahead",
                  latenessUs / 1E6);
+#endif
 
             mVideoBuffer->release();
             mVideoBuffer = NULL;
@@ -1910,9 +2008,17 @@ void AwesomePlayer::onVideoEvent() {
             if (!(mFlags & SLOW_DECODER_HACK)
                     || mSinceLastDropped > FRAME_DROP_FREQ)
             {
+#ifdef OMAP_ENHANCEMENT
+                if (mDebugFps != 0) {
+                    ALOGV("we're late by %lld us (%.2f secs) dropping "
+                        "one after %d frames",
+                        latenessUs, latenessUs / 1E6, mSinceLastDropped);
+                }
+#else
                 ALOGV("we're late by %lld us (%.2f secs) dropping "
                      "one after %d frames",
                      latenessUs, latenessUs / 1E6, mSinceLastDropped);
+#endif
 
                 mSinceLastDropped = 0;
                 mVideoBuffer->release();
@@ -2327,6 +2433,17 @@ status_t AwesomePlayer::finishSetDataSource_l() {
     if (extractor->getDrmFlag()) {
         checkDrmStatus(dataSource);
     }
+
+#ifdef OMAP_ENHANCEMENT
+    sp<MetaData> fileMetadata = extractor->getMetaData();
+    bool isAvailable = fileMetadata->findCString(kKeyMIMEType, &mExtractorType);
+    if(isAvailable) {
+        ALOGD("%s:: ExtractorType %s", __FUNCTION__,  mExtractorType);
+    } else {
+        ALOGE("%s:: ExtractorType not available", __FUNCTION__);
+    }
+    mExtractor = extractor;
+#endif
 
     status_t err = setDataSource_l(extractor);
 

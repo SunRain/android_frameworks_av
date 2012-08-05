@@ -35,6 +35,11 @@
 #include "include/WVMExtractor.h"
 #include "include/ExtendedExtractor.h"
 
+#ifdef OMAP_ENHANCEMENT
+#include "include/ASFExtractor.h"
+#include "include/AVIExtractor.h"
+#endif
+
 #include "matroska/MatroskaExtractor.h"
 
 #include <media/stagefright/foundation/AMessage.h>
@@ -172,6 +177,13 @@ void DataSource::RegisterDefaultSniffers() {
     RegisterSniffer(SniffWVM);
 #ifdef QCOM_HARDWARE
     ExtendedExtractor::RegisterSniffers();
+#endif
+
+#ifdef OMAP_ENHANCEMENT
+    if(isASFParserAvailable()) {
+        RegisterSniffer(SniffASF);
+    }
+    RegisterSniffer(SniffAVI);
 #endif
 
     char value[PROPERTY_VALUE_MAX];

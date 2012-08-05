@@ -36,6 +36,9 @@
 #ifdef EXYNOS4_ENHANCEMENTS
 #include "sec_format.h"
 #endif
+#ifdef OMAP_ENHANCEMENT
+#include <OMX_TI_IVCommon.h>
+#endif
 
 namespace android {
 
