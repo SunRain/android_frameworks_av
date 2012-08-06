@@ -61,6 +61,12 @@ LOCAL_SRC_FILES:=                         \
         WVMExtractor.cpp                  \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
+        APE.cpp                           \
+
+ifeq ($(OMAP_ENHANCEMENT), true)
+LOCAL_SRC_FILES += ASFExtractor.cpp
+LOCAL_SRC_FILES +=  AVIExtractor.cpp
+endif
 
 
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
@@ -71,13 +77,19 @@ endif
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
-        $(TOP)/frameworks/native/include/media/openmax \
         $(TOP)/external/expat/lib \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
         $(TOP)/external/openssl/include \
         $(TOP)/hardware/qcom/display/libgralloc \
         $(TOP)/hardware/qcom/media/mm-core/inc
+
+ifdef OMAP_ENHANCEMENT
+#LOCAL_C_INCLUDES += $(DOMX_PATH)/omx_core/inc
+LOCAL_C_INCLUDES += $(TOP)/hardware/ti/domx/omx_core/inc
+else
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
+endif
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \

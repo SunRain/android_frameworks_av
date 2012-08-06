@@ -47,6 +47,12 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <OMX_Component.h>
 
 #include "include/avc_utils.h"
+#ifdef OMAP_ENHANCEMENT
+#include <OMX_TI_Video.h>
+#include <OMX_TI_Index.h>
+#include <OMX_TI_IVCommon.h>
+#include <ctype.h>
+#endif
 
 #ifdef QCOM_HARDWARE
 #include <gralloc_priv.h>
@@ -285,6 +291,17 @@ uint32_t OMXCodec::getComponentQuirks(
                 index, "requies-loaded-to-idle-after-allocation")) {
       quirks |= kRequiresLoadedToIdleAfterAllocation;
     }
+
+#ifdef OMAP_ENHANCEMENT
+    if (list->codecHasQuirk(
+                index, "needs-flush-before-disable")) {
+        quirks |= kNeedsFlushBeforeDisable;
+    }
+    if (list->codecHasQuirk(
+                index, "requires-flush-complete-emulation")) {
+        quirks |= kRequiresFlushCompleteEmulation;
+    }
+#endif
 
     return quirks;
 }
@@ -578,6 +595,24 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             CHECK(meta->findData(kKeyVorbisBooks, &type, &data, &size));
             addCodecSpecificData(data, size);
         }
+#ifdef OMAP_ENHANCEMENT
+        else if (meta->findData(kKeyHdr, &type, &data, &size)) {
+            CODEC_LOGV("Codec specific information of size %d", size);
+            addCodecSpecificData(data, size);
+        }
+
+        if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV, mMIME)) {
+            //Set the profile (RCV or VC1)
+            meta->findData(kKeyHdr, &type, &data, &size);
+            const uint8_t *ptr = (const uint8_t *)data;
+
+            OMX_U32 width = (((OMX_U32)ptr[18] << 24) | ((OMX_U32)ptr[17] << 16) | ((OMX_U32)ptr[16] << 8) | (OMX_U32)ptr[15]);
+            OMX_U32 height  = (((OMX_U32)ptr[22] << 24) | ((OMX_U32)ptr[21] << 16) | ((OMX_U32)ptr[20] << 8) | (OMX_U32)ptr[19]);
+
+            CODEC_LOGV("Height and width = %u %u\n", height, width);
+
+        }
+#endif
     }
 
     int32_t bitRate = 0;
@@ -655,6 +690,14 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
             bool success = meta->findInt32(kKeyWidth, &width);
             success = success && meta->findInt32(kKeyHeight, &height);
             CHECK(success);
+#ifdef OMAP_ENHANCEMENT
+            if(!strcmp(mComponentName, "OMX.TI.DUCATI1.VIDEO.DECODER")) {
+                /* save video FPS */
+                if (!(meta->findInt32(kKeyVideoFPS, &mVideoFPS))) {
+                    mVideoFPS = 30; //default value in case of FPS data not found
+                }
+            }
+#endif
             status_t err = setVideoOutputFormat(
                     mMIME, width, height);
 
@@ -702,7 +745,16 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
 
     int32_t maxInputSize;
     if (meta->findInt32(kKeyMaxInputSize, &maxInputSize)) {
+#ifdef OMAP_ENHANCEMENT
+        if(!strcmp("OMX.TI.DUCATI1.VIDEO.DECODER", mComponentName)) {
+            mInputMinBufferSize = maxInputSize;
+            ALOGE("set buffer size variable to : %d",maxInputSize);
+        } else {
+#endif
         setMinBufferSize(kPortIndexInput, (OMX_U32)maxInputSize);
+#ifdef OMAP_ENHANCEMENT
+        }
+#endif
     }
 
     initOutputFormat(meta);
@@ -955,6 +1007,12 @@ void OMXCodec::setVideoInputFormat(
         compressionFormat = OMX_VIDEO_CodingMPEG4;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_H263, mime)) {
         compressionFormat = OMX_VIDEO_CodingH263;
+#ifdef OMAP_ENHANCEMENT
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV, mime)) {
+        compressionFormat = OMX_VIDEO_CodingWMV;
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_MPEG2, mime)) {
+        compressionFormat = OMX_VIDEO_CodingMPEG2;
+#endif
     } else {
         ALOGE("Not a supported video mime type: %s", mime);
         CHECK(!"Should not be here. Not a supported video mime type.");
@@ -1187,6 +1245,13 @@ status_t OMXCodec::setupH263EncoderParameters(const sp<MetaData>& meta) {
     }
     h263type.nBFrames = 0;
 
+#ifdef OMAP_ENAHNCEMENT
+    //When flag kOnlySubmitOneInputBufferAtOneTime is enabled, B frames must not be used.
+    if (mFlags & kOnlySubmitOneInputBufferAtOneTime) {
+        h263type.nBFrames = 0;
+    }
+#endif
+
     // Check profile and level parameters
     CodecProfileLevel defaultProfileLevel, profileLevel;
     defaultProfileLevel.mProfile = h263type.eProfile;
@@ -1244,6 +1309,13 @@ status_t OMXCodec::setupMPEG4EncoderParameters(const sp<MetaData>& meta) {
     mpeg4type.nHeaderExtension = 0;
     mpeg4type.bReversibleVLC = OMX_FALSE;
 
+#ifdef OMAP_ENHANCEMENT
+    //When flag kOnlySubmitOneInputBufferAtOneTime is enabled, B frames must not be used.
+    if (mFlags & kOnlySubmitOneInputBufferAtOneTime) {
+        mpeg4type.nBFrames = 0;
+    }
+#endif
+
     // Check profile and level parameters
     CodecProfileLevel defaultProfileLevel, profileLevel;
     defaultProfileLevel.mProfile = mpeg4type.eProfile;
@@ -1291,7 +1363,12 @@ status_t OMXCodec::setupAVCEncoderParameters(const sp<MetaData>& meta) {
     h264type.eLevel = static_cast<OMX_VIDEO_AVCLEVELTYPE>(profileLevel.mLevel);
 
     // XXX
+#ifdef OMAP_ENHANCEMENT
+    if ((strncmp(mComponentName, "OMX.TI.DUCATI1", 14) != 0)
+            && (h264type.eProfile != OMX_VIDEO_AVCProfileBaseline)) {
+#else
     if (h264type.eProfile != OMX_VIDEO_AVCProfileBaseline) {
+#endif
         ALOGW("Use baseline profile instead of %d for AVC recording",
             h264type.eProfile);
         h264type.eProfile = OMX_VIDEO_AVCProfileBaseline;
@@ -1315,6 +1392,13 @@ status_t OMXCodec::setupAVCEncoderParameters(const sp<MetaData>& meta) {
         h264type.bDirectSpatialTemporal = OMX_FALSE;
         h264type.nCabacInitIdc = 0;
     }
+
+#ifdef OMAP_ENHANCEMENT
+    //When flag kOnlySubmitOneInputBufferAtOneTime is enabled, B frames must not be used.
+    if (mFlags & kOnlySubmitOneInputBufferAtOneTime) {
+        h264type.nBFrames = 0;
+    }
+#endif
 
     if (h264type.nBFrames != 0) {
         h264type.nAllowedPictureTypes |= OMX_VIDEO_PictureTypeB;
@@ -1352,6 +1436,10 @@ status_t OMXCodec::setVideoOutputFormat(
         compressionFormat = OMX_VIDEO_CodingVPX;
     } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_MPEG2, mime)) {
         compressionFormat = OMX_VIDEO_CodingMPEG2;
+#ifdef OMAP_ENHANCEMENT
+    } else if (!strcasecmp(MEDIA_MIMETYPE_VIDEO_WMV , mime)) {
+        compressionFormat = OMX_VIDEO_CodingWMV;
+#endif
     } else {
         ALOGE("Not a supported video mime type: %s", mime);
         CHECK(!"Should not be here. Not a supported video mime type.");
@@ -1465,6 +1553,9 @@ status_t OMXCodec::setVideoOutputFormat(
 
     video_def->nFrameWidth = width;
     video_def->nFrameHeight = height;
+#ifdef OMAP_ENHANCEMENT
+    video_def->xFramerate = mVideoFPS << 16;
+#endif
 
     err = mOMX->setParameter(
             mNode, OMX_IndexParamPortDefinition, &def, sizeof(def));
@@ -1506,6 +1597,9 @@ OMXCodec::OMXCodec(
       mSkipCutBuffer(NULL),
       mLeftOverBuffer(NULL),
       mPaused(false),
+#ifdef OMAP_ENHANCEMENT
+      mInputMinBufferSize(0),
+#endif
       mNativeWindow(
               (!strncmp(componentName, "OMX.google.", 11)
               || !strcmp(componentName, "OMX.Nvidia.mpeg2v.decode"))
@@ -1561,6 +1655,18 @@ void OMXCodec::setComponentRole(
             "video_decoder.mpeg4", "video_encoder.mpeg4" },
         { MEDIA_MIMETYPE_VIDEO_H263,
             "video_decoder.h263", "video_encoder.h263" },
+#ifdef OMAP_ENHANCEMENT
+        { MEDIA_MIMETYPE_VIDEO_WMV,
+            "video_decoder.wmv", "" },
+        { MEDIA_MIMETYPE_AUDIO_WMA,
+            "audio_decoder.wma", "" },
+        { MEDIA_MIMETYPE_AUDIO_WMAPRO,
+            "audio_decoder.wmapro", "" },
+        { MEDIA_MIMETYPE_AUDIO_WMALSL,
+            "audio_decoder.wmalsl", "" },
+        { MEDIA_MIMETYPE_VIDEO_MPEG2,
+            "video_decoder.mpeg2", NULL },
+#endif
         { MEDIA_MIMETYPE_VIDEO_VPX,
             "video_decoder.vpx", "video_encoder.vpx" },
         { MEDIA_MIMETYPE_AUDIO_RAW,
@@ -1717,6 +1823,14 @@ status_t OMXCodec::allocateBuffersOnPort(OMX_U32 portIndex) {
         return err;
     }
 
+#ifdef OMAP_ENHANCEMENT
+    if( (!strcmp(mComponentName, "OMX.TI.DUCATI1.VIDEO.DECODER")) &&
+        (portIndex == kPortIndexInput) &&
+        (def.nBufferSize < mInputMinBufferSize)) {
+        ALOGI("!! Change the I/P buffer size to %d !!", mInputMinBufferSize);
+        def.nBufferSize = mInputMinBufferSize;
+    }
+#endif
     CODEC_LOGV("allocating %lu buffers of size %lu on %s port",
             def.nBufferCountActual, def.nBufferSize,
             portIndex == kPortIndexInput ? "input" : "output");
@@ -2374,6 +2488,13 @@ void OMXCodec::on_message(const omx_message &msg) {
             ALOGW("Dropping OMX EVENT message - we're in ERROR state.");
             return;
         }
+#ifdef OMAP_ENHANCEMENT
+        /* Dropping buffers return from client will cause problem in freeing so process them */
+        ALOGW("Dropping OMX message - we're in ERROR state. msg.type: %d",msg.type);
+#else
+        ALOGW("Dropping OMX message - we're in ERROR state.");
+        return;
+#endif
     }
 
     switch (msg.type) {
@@ -2679,8 +2800,13 @@ void OMXCodec::onEvent(OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2) {
         case OMX_EventError:
         {
             CODEC_LOGE("ERROR(0x%08lx, %ld)", data1, data2);
-
+#ifdef OMAP_ENHANCEMENT
+            if (!isIntermediateState(mState)) {
+                setState(ERROR);
+            }
+#else
             setState(ERROR);
+#endif
             break;
         }
 
@@ -2704,6 +2830,9 @@ void OMXCodec::onEvent(OMX_EVENTTYPE event, OMX_U32 data1, OMX_U32 data2) {
                 onPortSettingsChanged(data1);
             } else if (data1 == kPortIndexOutput &&
                         (data2 == OMX_IndexConfigCommonOutputCrop ||
+#ifdef OMAP_ENHANCEMENT
+                         data2 == OMX_TI_IndexConfigStreamInterlaceFormats ||
+#endif
                          data2 == OMX_IndexConfigCommonScale)) {
 
                 sp<MetaData> oldOutputFormat = mOutputFormat;
@@ -3342,6 +3471,13 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
 
     for (;;) {
         MediaBuffer *srcBuffer;
+#ifdef OMAP_ENHANCEMENT
+        MediaBuffer *tmpBuffer = NULL;
+        if (!mIsEncoder && !(mFlags & kUseSecureInputBuffers)) {
+            srcBuffer = new MediaBuffer(info->mData, info->mSize);
+            tmpBuffer = srcBuffer;
+        }
+#endif
         if (mSeekTimeUs >= 0) {
             if (mLeftOverBuffer) {
                 mLeftOverBuffer->release();
@@ -3473,7 +3609,7 @@ bool OMXCodec::drainInputBuffer(BufferInfo *info) {
                                 + srcBuffer->range_offset(),
                             srcBuffer->range_length());
                 }
-            }
+             }
         }
 
         int64_t lastBufferTimeUs;
@@ -3994,7 +4130,11 @@ void OMXCodec::addCodecSpecificData(const void *data, size_t size) {
 
     specific->mSize = size;
     memcpy(specific->mData, data, size);
-
+#ifdef OMAP_ENHANCEMENT
+    if (!size) {
+        return;
+    }
+#endif
     mCodecSpecificData.push(specific);
 }
 
@@ -4832,6 +4972,13 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
             } else if (video_def->eCompressionFormat == OMX_VIDEO_CodingAVC) {
                 mOutputFormat->setCString(
                         kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_AVC);
+#ifdef OMAP_ENHANCEMENT
+            } else if (video_def->eCompressionFormat == OMX_VIDEO_CodingWMV) {
+                mOutputFormat->setCString(kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_WMV);
+            } else if (video_def->eCompressionFormat == OMX_VIDEO_CodingMPEG2) {
+                mOutputFormat->setCString(
+                        kKeyMIMEType, MEDIA_MIMETYPE_VIDEO_MPEG2);
+#endif
             } else {
                 CHECK(!"Unknown compression format.");
             }
@@ -4879,8 +5026,58 @@ void OMXCodec::initOutputFormat(const sp<MetaData> &inputFormat) {
                             video_def->nFrameHeight - 1);
                 }
 
+#ifdef OMAP_ENHANCEMENT
+                // Get Scaling Values and intialise mOutputFormat.
+                OMX_CONFIG_SCALEFACTORTYPE scale;
+                InitOMXParams(&scale);
+                scale.nPortIndex = kPortIndexOutput;
+                if (OK == mOMX->getConfig(
+                        mNode,OMX_IndexConfigCommonScale,
+                        &scale, sizeof(scale))) {
+                    int32_t left, top, right, bottom;
+                    CHECK(mOutputFormat->findRect(kKeyCropRect,
+                            &left, &top,
+                            &right, &bottom));
+
+                    // The scale is in 16.16 format.
+                    // scale 1.0 = 0x010000. When there is no
+                    // need to change the display, skip it.
+                    ALOGV("Get OMX_IndexConfigScale: 0x%lx/0x%lx",
+                            scale.xWidth, scale.xHeight);
+
+                    if (scale.xWidth != 0x010000) {
+                        mOutputFormat->setInt32(kKeyDisplayWidth,
+                                ((right - left +  1) * scale.xWidth)  >> 16);
+                        mOutputPortSettingsHaveChanged = true;
+                    }
+
+                    if (scale.xHeight != 0x010000) {
+                        mOutputFormat->setInt32(kKeyDisplayHeight,
+                                ((bottom  - top + 1) * scale.xHeight) >> 16);
+                        mOutputPortSettingsHaveChanged = true;
+                    }
+                }
+
+                OMX_TI_STREAMINTERLACEFORMAT buff_layout;
+                InitOMXParams(&buff_layout);
+                buff_layout.nPortIndex = kPortIndexOutput;
+                uint32_t layout = OMX_InterlaceFrameProgressive;
+                if (OK == mOMX->getConfig(
+                        mNode,
+                        static_cast<OMX_INDEXTYPE>(OMX_TI_IndexConfigStreamInterlaceFormats),
+                        &buff_layout, sizeof(buff_layout))) {
+                    layout = buff_layout.bInterlaceFormat ?
+                             buff_layout.nInterlaceFormats & OMX_InterlaceFmtMask :
+                             layout;
+                }
+                mOutputFormat->setInt32(kKeyBufferLayout, layout);
+#endif
+
                 if (mNativeWindow != NULL) {
                      initNativeWindowCrop();
+#ifdef OMAP_ENHANCEMENT
+                     native_window_set_buffers_layout(mNativeWindow.get(), layout);
+#endif
                 }
             }
             break;
@@ -5089,5 +5286,169 @@ status_t getOMXChannelMapping(size_t numChannels, OMX_AUDIO_CHANNELTYPE map[]) {
 
     return OK;
 }
+
+#ifdef OMAP_ENHANCEMENT
+
+// Attempt to parse an int64 literal optionally surrounded by whitespace,
+// returns true on success, false otherwise.
+static bool safe_strtoi64(const char *s, int64_t *val) {
+    char *end;
+
+    // It is lame, but according to man page, we have to set errno to 0
+    // before calling strtoll().
+    errno = 0;
+    *val = strtoll(s, &end, 10);
+
+    if (end == s || errno == ERANGE) {
+        return false;
+    }
+
+    // Skip trailing whitespace
+    while (isspace(*end)) {
+        ++end;
+    }
+
+    // For a successful return, the string must contain nothing but a valid
+    // int64 literal optionally surrounded by whitespace.
+
+    return *end == '\0';
+}
+
+// Return true if the value is in [0, 0x007FFFFFFF]
+static bool safe_strtoi32(const char *s, int32_t *val) {
+    int64_t temp;
+    if (safe_strtoi64(s, &temp)) {
+        if (temp >= 0 && temp <= 0x007FFFFFFF) {
+            *val = static_cast<int32_t>(temp);
+            return true;
+        }
+    }
+    return false;
+}
+
+status_t OMXCodec::setParameter(const String8 &key, const String8 &value){
+
+    if (key == "video-param-insert-i-frame") {
+        ALOGV("setParamInsertVideoIFrame");
+        OMX_CONFIG_INTRAREFRESHVOPTYPE voptype;
+        InitOMXParams(&voptype);
+        voptype.nPortIndex = 1;
+
+        status_t err = mOMX->getConfig(
+                mNode, OMX_IndexConfigVideoIntraVOPRefresh, &voptype, sizeof(voptype));
+        if (err != OK) {
+            return BAD_VALUE;
+        }
+
+        voptype.IntraRefreshVOP = OMX_TRUE;
+        err = mOMX->setConfig(
+                mNode, OMX_IndexConfigVideoIntraVOPRefresh, &voptype, sizeof(voptype));
+        if (err != OK) {
+            return BAD_VALUE;
+        }
+
+        return OK;
+    }
+    else if (key == "video-param-nalsize-bytes") {
+        int32_t bytes;
+        if (safe_strtoi32(value.string(), &bytes)) {
+            ALOGV("setParamMaxNalSize:: bytes: %d", bytes);
+            OMX_VIDEO_CONFIG_SLICECODINGTYPE slicetype;
+            InitOMXParams(&slicetype);
+            slicetype.nPortIndex = 1;
+
+            status_t err = mOMX->getConfig(
+                    mNode, (OMX_INDEXTYPE)OMX_TI_IndexConfigSliceSettings, &slicetype, sizeof(slicetype));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+
+            slicetype.eSliceMode = OMX_VIDEO_SLICEMODE_AVCByteSlice;
+            slicetype.nSlicesize = bytes;
+
+            err = mOMX->setConfig(
+                    mNode, (OMX_INDEXTYPE)OMX_TI_IndexConfigSliceSettings, &slicetype, sizeof(slicetype));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+            return OK;
+        }
+    }
+    else if (key == "video-param-nalsize-macroblocks") {
+        int32_t mb;
+        if (safe_strtoi32(value.string(), &mb)) {
+            ALOGV("setParamMaxNalSize:: MB: %d", mb);
+            OMX_VIDEO_CONFIG_SLICECODINGTYPE slicetype;
+            InitOMXParams(&slicetype);
+            slicetype.nPortIndex = 1;
+
+            status_t err = mOMX->getConfig(
+                    mNode, (OMX_INDEXTYPE)OMX_TI_IndexConfigSliceSettings, &slicetype, sizeof(slicetype));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+
+            slicetype.eSliceMode = OMX_VIDEO_SLICEMODE_AVCMBSlice;
+            slicetype.nSlicesize = mb;
+
+            err = mOMX->setConfig(
+                    mNode, (OMX_INDEXTYPE)OMX_TI_IndexConfigSliceSettings, &slicetype, sizeof(slicetype));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+            return OK;
+        }
+    }
+    else if (key == "video-config-encoding-bitrate") {
+        int32_t bitRate;
+        if (safe_strtoi32(value.string(), &bitRate)) {
+
+            ALOGV("setConfigVideoBitRate: %d", bitRate);
+            OMX_VIDEO_CONFIG_BITRATETYPE bitrateType;
+            InitOMXParams(&bitrateType);
+            bitrateType.nPortIndex = 1;
+
+            status_t err = mOMX->getConfig(
+                    mNode, OMX_IndexConfigVideoBitrate,
+                    &bitrateType, sizeof(bitrateType));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+
+            bitrateType.nEncodeBitrate = bitRate;
+            err = mOMX->setConfig(mNode, OMX_IndexConfigVideoBitrate, &bitrateType, sizeof(bitrateType));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+            return OK;
+        }
+    }
+    else if (key == "video-config-encoding-framerate") {
+        int32_t frameRate;
+        if (safe_strtoi32(value.string(), &frameRate)) {
+
+            ALOGV("setConfigVideoFrameRate: %d", frameRate);
+            OMX_CONFIG_FRAMERATETYPE framerateType;
+            InitOMXParams(&framerateType);
+            framerateType.nPortIndex = 0;
+
+            status_t err = mOMX->getConfig(
+                    mNode, OMX_IndexConfigVideoFramerate,
+                    &framerateType, sizeof(framerateType));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+
+            framerateType.xEncodeFramerate = frameRate << 16;
+            err = mOMX->setConfig(mNode, OMX_IndexConfigVideoFramerate, &framerateType, sizeof(framerateType));
+            if (err != OK) {
+                return BAD_VALUE;
+            }
+            return OK;
+        }
+    }
+    return BAD_VALUE;
+}
+#endif
 
 }  // namespace android
