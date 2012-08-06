@@ -84,7 +84,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/hardware/qcom/display/libgralloc \
         $(TOP)/hardware/qcom/media/mm-core/inc
 
-ifdef OMAP_ENHANCEMENT
+ifeq ($(OMAP_ENHANCEMENT), true)
 LOCAL_C_INCLUDES += $(DOMX_PATH)/omx_core/inc
 else
 LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
