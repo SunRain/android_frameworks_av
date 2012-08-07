@@ -74,7 +74,14 @@ LOCAL_SRC_FILES+=                         \
         ExtendedExtractor.cpp
 endif
 
-LOCAL_C_INCLUDES:= \
+ifeq ($(OMAP_ENHANCEMENT), true)
+#need to define the DOMX_PATH in BoardConfig.mk
+LOCAL_C_INCLUDES := $(DOMX_PATH)/omx_core/inc
+else
+LOCAL_C_INCLUDES := $(TOP)/frameworks/native/include/media/openmax
+endif
+
+LOCAL_C_INCLUDES += \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
         $(TOP)/external/expat/lib \
@@ -83,13 +90,6 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/external/openssl/include \
         $(TOP)/hardware/qcom/display/libgralloc \
         $(TOP)/hardware/qcom/media/mm-core/inc
-
-ifdef OMAP_ENHANCEMENT
-#LOCAL_C_INCLUDES += $(DOMX_PATH)/omx_core/inc
-LOCAL_C_INCLUDES += $(TOP)/hardware/ti/domx/omx_core/inc
-else
-LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
-endif
 
 LOCAL_SHARED_LIBRARIES := \
         libbinder \
