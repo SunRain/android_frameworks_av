@@ -58,6 +58,10 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <gralloc_priv.h>
 #include <OMX_QCOMExtns.h>
 #endif
+#ifdef OMAP_ENHANCEMENT_S3D
+#include <OMX_TI_Common.h>
+#include <ui/S3DFormat.h>
+#endif
 
 namespace android {
 
@@ -92,6 +96,12 @@ const static int64_t kBufferFilledEventTimeOutNs = 3000000000LL;
 // 1000 is more than enough for us to tell whether the omx
 // component in question is buggy or not.
 const static uint32_t kMaxColorFormatSupported = 1000;
+
+#ifdef OMAP_ENHANCEMENT_S3D
+// OMX TI specific extra data types
+const static uint32_t OMX_TI_SEIinfo2010Frame1 = 0x7F000015;
+const static uint32_t OMX_TI_SEIinfo2010Frame2 = 0x7F000016;
+#endif
 
 #define FACTORY_CREATE_ENCODER(name) \
 static sp<MediaSource> Make##name(const sp<MediaSource> &source, const sp<MetaData> &meta) { \
@@ -1418,8 +1428,61 @@ status_t OMXCodec::setupAVCEncoderParameters(const sp<MetaData>& meta) {
 
     CHECK_EQ(setupBitRate(bitRate), (status_t)OK);
 
+#ifdef OMAP_ENHANCEMENT_S3D
+    int32_t s3dLayout;
+    if (meta->findInt32(kKeyS3DLayout, &s3dLayout)) {
+        setupAVCEncoderS3DParameters(s3dLayout);
+    }
+#endif
+
     return OK;
 }
+
+#ifdef OMAP_ENHANCEMENT_S3D
+void OMXCodec::setupAVCEncoderS3DParameters(int32_t s3dLayout) {
+
+    if ((s3dLayout != eSideBySide) && (s3dLayout != eTopBottom)) {
+        CODEC_LOGE("Invalid s3d layout");
+        return;
+    }
+
+    OMX_TI_VIDEO_PARAM_FRAMEDATACONTENTTYPE fdc;
+    OMX_TI_VIDEO_PARAM_AVCENC_FRAMEPACKINGINFO2010 fpi;
+
+    InitOMXParams(&fdc);
+    fdc.nPortIndex = kPortIndexInput;
+    fdc.eContentType = OMX_TI_Video_AVC_2010_StereoFramePackingType;
+
+    InitOMXParams(&fpi);
+    fpi.nPortIndex = kPortIndexInput;
+    fpi.nFrame0PositionX = 0;
+    fpi.nFrame0PositionY = 0;
+    fpi.nFrame1PositionX = 0;
+    fpi.nFrame1PositionY = 0;
+
+    if (s3dLayout == eSideBySide) {
+        fpi.eFramePackingType = OMX_TI_Video_FRAMEPACK_SIDE_BY_SIDE;
+    } else {
+        fpi.eFramePackingType = OMX_TI_Video_FRAMEPACK_TOP_BOTTOM;
+    }
+
+    status_t err = mOMX->setParameter(
+            mNode,
+            (OMX_INDEXTYPE)OMX_TI_IndexParamVideoFrameDataContentSettings,
+            &fdc, sizeof(fdc));
+
+    if (err == OK) {
+        err = mOMX->setParameter(
+                mNode,
+                (OMX_INDEXTYPE)OMX_TI_IndexParamStereoFramePacking2010Settings,
+                &fpi, sizeof(fpi));
+    }
+
+    if (err) {
+        CODEC_LOGE("could not configure S3D encoding parameters (0x%x)", err);
+    }
+}
+#endif
 
 status_t OMXCodec::setVideoOutputFormat(
         const char *mime, OMX_U32 width, OMX_U32 height) {
@@ -2478,6 +2541,55 @@ int64_t OMXCodec::getDecodingTimeUs() {
     return timeUs;
 }
 
+#ifdef OMAP_ENHANCEMENT_S3D
+void OMXCodec::handle_extradata(void *data)
+{
+    if (mNativeWindow == NULL || data == NULL) {
+        return;
+    }
+
+    OMX_TI_PLATFORMPRIVATE *pPrivate = (OMX_TI_PLATFORMPRIVATE *)data;
+    if (pPrivate->pMetaDataBuffer == NULL) {
+        return;
+    }
+
+    OMX_OTHER_EXTRADATATYPE *pExtraData;
+    OMX_U8 *pData = (OMX_U8 *)pPrivate->pMetaDataBuffer;
+    unsigned int offset = 0;
+    do {
+        pExtraData = ( OMX_OTHER_EXTRADATATYPE *)(pData+offset);
+        offset += pExtraData->nSize;
+        if (offset > pPrivate->nMetaDataSize) {
+            break;
+        }
+        uint32_t layout = 0;
+        switch((int)pExtraData->eType) {
+            case OMX_TI_SEIinfo2010Frame1:
+            case OMX_TI_SEIinfo2010Frame2:
+                OMX_TI_FRAMEPACKINGDECINFO *pFramePacking;
+                pFramePacking = (OMX_TI_FRAMEPACKINGDECINFO *)pExtraData->data;
+                if (pFramePacking->nFramePackingArrangementType == OMX_TI_Video_FRAMEPACK_SIDE_BY_SIDE) {
+                    layout = eSideBySide << 16;
+                } else if (pFramePacking->nFramePackingArrangementType == OMX_TI_Video_FRAMEPACK_TOP_BOTTOM) {
+                    layout = eTopBottom << 16;
+                }
+
+                if (pFramePacking->nContentInterpretationType) {
+                    layout |= eLeftViewFirst << 24;
+                } else {
+                    layout |= eRightViewFirst << 24;
+                }
+
+                if (layout) {
+                    native_window_set_buffers_layout(mNativeWindow.get(), layout);
+                }
+                break;
+        }
+    } while((offset + sizeof(OMX_OTHER_EXTRADATATYPE) - 1) <= pPrivate->nMetaDataSize &&
+             pExtraData && pExtraData->eType != 0);
+}
+#endif
+
 void OMXCodec::on_message(const omx_message &msg) {
     if (mState == ERROR) {
         /*
@@ -2649,6 +2761,15 @@ void OMXCodec::on_message(const omx_message &msg) {
                     isCodecSpecific = true;
                 }
 
+#ifdef OMAP_ENHANCEMENT_S3D
+                if ((msg.u.extended_buffer_data.flags & OMX_TI_BUFFERFLAG_DETACHEDEXTRADATA) &&
+                    !(mFlags & kEnableGrallocUsageProtected) &&
+                    !(msg.u.extended_buffer_data.flags & OMX_BUFFERFLAG_EOS) &&
+                    !strcmp(mComponentName, "OMX.TI.DUCATI1.VIDEO.DECODER") &&
+                    mOMXLivesLocally) {
+                    handle_extradata(msg.u.extended_buffer_data.platform_private);
+                }
+#endif
                 if (isGraphicBuffer || mQuirks & kOutputBuffersAreUnreadable) {
                     buffer->meta_data()->setInt32(kKeyIsUnreadable, true);
                 }

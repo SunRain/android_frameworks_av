@@ -192,7 +192,10 @@ enum {
     kKeyUseArbitraryMode  = 'ArbM'  //bool (int32_t)
 #endif
 #ifdef OMAP_ENHANCEMENT
-    kKeyBufferLayout      = 'lout'
+    kKeyBufferLayout      = 'lout',
+#endif
+#ifdef OMAP_ENHANCEMENT_S3D
+    kKeyS3DLayout         = 's3dl',
 #endif
 
 };
