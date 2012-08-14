@@ -69,10 +69,13 @@ LOCAL_SRC_FILES +=  AVIExtractor.cpp
 LOCAL_SRC_FILES += TimeInterpolator.cpp
 endif
 
-
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
 LOCAL_SRC_FILES+=                         \
         ExtendedExtractor.cpp
+ifeq ($(BOARD_HAVE_QCOM_FM),true)
+LOCAL_SRC_FILES+=                         \
+        FMA2DPWriter.cpp
+endif
 endif
 
 LOCAL_C_INCLUDES:= \
