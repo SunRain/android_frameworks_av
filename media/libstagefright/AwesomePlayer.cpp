@@ -248,10 +248,14 @@ AwesomePlayer::AwesomePlayer()
 #ifdef OMAP_ENHANCEMENT
       mTextDriver(NULL),
       mExtractor(NULL),
-      mExtractorType(NULL) {
+      mExtractorType(NULL)
 #else
-      mTextDriver(NULL) {
+      mTextDriver(NULL)
 #endif
+#ifdef QCOM_HARDWARE
+      ,mBufferingDone(false)
+#endif
+    {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -578,6 +582,11 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
 
 void AwesomePlayer::reset() {
     Mutex::Autolock autoLock(mLock);
+#ifdef QCOM_HARDWARE
+    if (mConnectingDataSource != NULL) {
+        mConnectingDataSource->disconnect();
+    }
+#endif
     reset_l();
 }
 
@@ -800,6 +809,10 @@ void AwesomePlayer::onBufferingUpdate() {
 
         if (eos) {
             if (finalStatus == ERROR_END_OF_STREAM) {
+#ifdef QCOM_HARDWARE
+                ALOGV("End of Streaming, EOS Reached, Buffering is at 100 percent");
+                mBufferingDone = true;
+#endif
                 notifyListener_l(MEDIA_BUFFERING_UPDATE, 100);
             }
             if (mFlags & PREPARING) {
@@ -815,6 +828,10 @@ void AwesomePlayer::onBufferingUpdate() {
                 int percentage = 100.0 * (double)cachedDurationUs / mDurationUs;
                 if (percentage > 100) {
                     percentage = 100;
+#ifdef QCOM_HARDWARE
+                    ALOGV("Cache at 100%, Buffering Done ");
+                    mBufferingDone = true;
+#endif
                 }
 
                 notifyListener_l(MEDIA_BUFFERING_UPDATE, percentage);
@@ -857,6 +874,9 @@ void AwesomePlayer::onBufferingUpdate() {
         if (eos) {
             if (finalStatus == ERROR_END_OF_STREAM) {
                 notifyListener_l(MEDIA_BUFFERING_UPDATE, 100);
+#ifdef QCOM_HARDWARE
+                mBufferingDone = true;
+#endif
             }
             if (mFlags & PREPARING) {
                 ALOGV("cache has reached EOS, prepare is done.");
@@ -866,6 +886,9 @@ void AwesomePlayer::onBufferingUpdate() {
             int percentage = 100.0 * (double)cachedDurationUs / mDurationUs;
             if (percentage > 100) {
                 percentage = 100;
+#ifdef QCOM_HARDWARE
+                mBufferingDone = true;
+#endif
             }
 
             notifyListener_l(MEDIA_BUFFERING_UPDATE, percentage);
@@ -906,7 +929,13 @@ void AwesomePlayer::onBufferingUpdate() {
         }
     }
 
+#ifdef QCOM_HARDWARE
+    if (!mBufferingDone) {
+        postBufferingEvent_l();
+    }
+#else
     postBufferingEvent_l();
+#endif
 }
 
 void AwesomePlayer::sendCacheStats() {
@@ -1471,6 +1500,9 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
     if (mFlags & CACHE_UNDERRUN) {
         modifyFlags(CACHE_UNDERRUN, CLEAR);
         play_l();
+#ifdef QCOM_HARDWARE
+        notifyListener_l(MEDIA_INFO, MEDIA_INFO_BUFFERING_END);
+#endif
     }
 
     if ((mFlags & PLAYING) && mVideoSource != NULL && (mFlags & VIDEO_AT_EOS)) {
