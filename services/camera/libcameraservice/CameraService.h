@@ -111,10 +111,21 @@ private:
         virtual void            releaseRecordingFrame(const sp<IMemory>& mem);
         virtual status_t        autoFocus();
         virtual status_t        cancelAutoFocus();
+#ifdef OMAP_ENHANCEMENT_CPCAM
+        virtual status_t        takePicture(int msgType, const String8& params);
+#else
         virtual status_t        takePicture(int msgType);
+#endif
         virtual status_t        setParameters(const String8& params);
         virtual String8         getParameters() const;
         virtual status_t        sendCommand(int32_t cmd, int32_t arg1, int32_t arg2);
+
+#ifdef OMAP_ENHANCEMENT_CPCAM
+        virtual status_t        setBufferSource(const sp<ISurfaceTexture>& tapin,
+                                                const sp<ISurfaceTexture>& tapout);
+        virtual status_t        reprocess(int msgType, const String8& params);
+#endif
+
     private:
         friend class CameraService;
                                 Client(const sp<CameraService>& cameraService,
@@ -194,6 +205,7 @@ private:
         int                             mPreviewCallbackFlag;
         int                             mOrientation;     // Current display orientation
         bool                            mPlayShutterSound;
+        bool                            mFaceDetection;
 
         // Ensures atomicity among the public methods
         mutable Mutex                   mLock;
@@ -205,6 +217,14 @@ private:
         // This is a binder of Surface or SurfaceTexture.
         sp<IBinder>                     mSurface;
         sp<ANativeWindow>               mPreviewWindow;
+
+#ifdef OMAP_ENHANCEMENT_CPCAM
+        // This is a binder of Surface or SurfaceTexture.
+        sp<IBinder>                     mTapin;
+        sp<ANativeWindow>               mTapinClient;
+        sp<IBinder>                     mTapout;
+        sp<ANativeWindow>               mTapoutClient;
+#endif
 
         // If the user want us to return a copy of the preview frame (instead
         // of the original one), we allocate mPreviewBuffer and reuse it if possible.

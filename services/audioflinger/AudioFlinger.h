@@ -1,6 +1,7 @@
 /*
 **
 ** Copyright 2007, The Android Open Source Project
+** Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -205,6 +206,10 @@ public:
 
     virtual status_t moveEffects(int sessionId, audio_io_handle_t srcOutput,
                         audio_io_handle_t dstOutput);
+
+#if defined(QCOM_HARDWARE) && defined(QCOM_FM_ENABLED)
+    virtual status_t setFmVolume(float volume);
+#endif
 
     virtual audio_module_handle_t loadHwModule(const char *name);
 
@@ -1438,6 +1443,9 @@ private:
                 const int                           mReqChannelCount;
                 const uint32_t                      mReqSampleRate;
                 ssize_t                             mBytesRead;
+#ifdef QCOM_HARDWARE
+                int16_t                             mInputSource;
+#endif
                 // sync event triggering actual audio capture. Frames read before this event will
                 // be dropped and therefore not read by the application.
                 sp<SyncEvent>                       mSyncStartEvent;
@@ -1880,6 +1888,9 @@ mutable Mutex               mLock;      // mutex for process, commands and handl
         AUDIO_HW_SET_MIC_MUTE,          // set_mic_mute
         AUDIO_HW_SET_VOICE_VOLUME,      // set_voice_volume
         AUDIO_HW_SET_PARAMETER,         // set_parameters
+#if defined(QCOM_HARDWARE) && defined(QCOM_FM_ENABLED)
+        AUDIO_SET_FM_VOLUME,
+#endif
         AUDIO_HW_GET_INPUT_BUFFER_SIZE, // get_input_buffer_size
         AUDIO_HW_GET_MASTER_VOLUME,     // get_master_volume
         AUDIO_HW_GET_PARAMETER,         // get_parameters

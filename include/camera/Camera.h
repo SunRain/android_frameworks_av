@@ -46,6 +46,9 @@ struct CameraInfo {
      * right of the screen, the value should be 270.
      */
     int orientation;
+#ifdef QCOM_HARDWARE
+    int mode;
+#endif
 };
 
 class ICameraService;
@@ -118,6 +121,9 @@ public:
 
             // take a picture - picture returned from callback
             status_t    takePicture(int msgType);
+#ifdef OMAP_ENHANCEMENT_CPCAM
+            status_t    takePictureWithParameters(int msgType, const String8& params);
+#endif
 
             // set preview/capture parameters - key/value pairs
             status_t    setParameters(const String8& params);
@@ -130,6 +136,13 @@ public:
 
             // tell camera hal to store meta data or real YUV in video buffers.
             status_t    storeMetaDataInBuffers(bool enabled);
+
+#ifdef OMAP_ENHANCEMENT_CPCAM
+            status_t    reprocess(int msgType, const String8& params);
+            // pass the buffered ISurfaceTexture to the camera service
+            status_t    setBufferSource(const sp<ISurfaceTexture>& tapin,
+                                        const sp<ISurfaceTexture>& tapout);
+#endif
 
             void        setListener(const sp<CameraListener>& listener);
             void        setRecordingProxyListener(const sp<ICameraRecordingProxyListener>& listener);

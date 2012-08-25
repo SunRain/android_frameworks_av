@@ -248,10 +248,14 @@ AwesomePlayer::AwesomePlayer()
 #ifdef OMAP_ENHANCEMENT
       mTextDriver(NULL),
       mExtractor(NULL),
-      mExtractorType(NULL) {
+      mExtractorType(NULL)
 #else
-      mTextDriver(NULL) {
+      mTextDriver(NULL)
 #endif
+#ifdef QCOM_HARDWARE
+      ,mBufferingDone(false)
+#endif
+    {
     CHECK_EQ(mClient.connect(), (status_t)OK);
 
     DataSource::RegisterDefaultSniffers();
@@ -578,6 +582,11 @@ status_t AwesomePlayer::setDataSource_l(const sp<MediaExtractor> &extractor) {
 
 void AwesomePlayer::reset() {
     Mutex::Autolock autoLock(mLock);
+#ifdef QCOM_HARDWARE
+    if (mConnectingDataSource != NULL) {
+        mConnectingDataSource->disconnect();
+    }
+#endif
     reset_l();
 }
 
@@ -767,7 +776,11 @@ void AwesomePlayer::onVideoLagUpdate() {
     }
     mVideoLagEventPending = false;
 
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+    int64_t audioTimeUs = mAudioPlayer->getRealTimeUs();
+#else
     int64_t audioTimeUs = mAudioPlayer->getMediaTimeUs();
+#endif
     int64_t videoLateByUs = audioTimeUs - mVideoTimeUs;
 
     if (!(mFlags & VIDEO_AT_EOS) && videoLateByUs > 300000ll) {
@@ -796,6 +809,10 @@ void AwesomePlayer::onBufferingUpdate() {
 
         if (eos) {
             if (finalStatus == ERROR_END_OF_STREAM) {
+#ifdef QCOM_HARDWARE
+                ALOGV("End of Streaming, EOS Reached, Buffering is at 100 percent");
+                mBufferingDone = true;
+#endif
                 notifyListener_l(MEDIA_BUFFERING_UPDATE, 100);
             }
             if (mFlags & PREPARING) {
@@ -811,6 +828,10 @@ void AwesomePlayer::onBufferingUpdate() {
                 int percentage = 100.0 * (double)cachedDurationUs / mDurationUs;
                 if (percentage > 100) {
                     percentage = 100;
+#ifdef QCOM_HARDWARE
+                    ALOGV("Cache at 100%, Buffering Done ");
+                    mBufferingDone = true;
+#endif
                 }
 
                 notifyListener_l(MEDIA_BUFFERING_UPDATE, percentage);
@@ -853,6 +874,9 @@ void AwesomePlayer::onBufferingUpdate() {
         if (eos) {
             if (finalStatus == ERROR_END_OF_STREAM) {
                 notifyListener_l(MEDIA_BUFFERING_UPDATE, 100);
+#ifdef QCOM_HARDWARE
+                mBufferingDone = true;
+#endif
             }
             if (mFlags & PREPARING) {
                 ALOGV("cache has reached EOS, prepare is done.");
@@ -862,6 +886,9 @@ void AwesomePlayer::onBufferingUpdate() {
             int percentage = 100.0 * (double)cachedDurationUs / mDurationUs;
             if (percentage > 100) {
                 percentage = 100;
+#ifdef QCOM_HARDWARE
+                mBufferingDone = true;
+#endif
             }
 
             notifyListener_l(MEDIA_BUFFERING_UPDATE, percentage);
@@ -902,7 +929,13 @@ void AwesomePlayer::onBufferingUpdate() {
         }
     }
 
+#ifdef QCOM_HARDWARE
+    if (!mBufferingDone) {
+        postBufferingEvent_l();
+    }
+#else
     postBufferingEvent_l();
+#endif
 }
 
 void AwesomePlayer::sendCacheStats() {
@@ -1440,7 +1473,11 @@ status_t AwesomePlayer::getPosition(int64_t *positionUs) {
         Mutex::Autolock autoLock(mMiscStateLock);
         *positionUs = mVideoTimeUs;
     } else if (mAudioPlayer != NULL) {
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+        *positionUs = mAudioPlayer->getRealTimeUs();
+#else
         *positionUs = mAudioPlayer->getMediaTimeUs();
+#endif
     } else {
         *positionUs = 0;
     }
@@ -1463,6 +1500,9 @@ status_t AwesomePlayer::seekTo_l(int64_t timeUs) {
     if (mFlags & CACHE_UNDERRUN) {
         modifyFlags(CACHE_UNDERRUN, CLEAR);
         play_l();
+#ifdef QCOM_HARDWARE
+        notifyListener_l(MEDIA_INFO, MEDIA_INFO_BUFFERING_END);
+#endif
     }
 
     if ((mFlags & PLAYING) && mVideoSource != NULL && (mFlags & VIDEO_AT_EOS)) {
@@ -1550,17 +1590,6 @@ status_t AwesomePlayer::initAudioDecoder() {
 
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         mAudioSource = mAudioTrack;
-#ifdef OMAP_ENHANCEMENT
-    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) {
-        const char *componentName  = "OMX.ITTIAM.WMA.decode";
-        mAudioSource = OMXCodec::Create(
-        mClient.interface(), mAudioTrack->getFormat(),
-        false,
-        mAudioTrack, componentName);
-        if (mAudioSource == NULL) {
-            ALOGE("Failed to create OMX component for WMA codec");
-        }
-#endif
     } else {
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
@@ -1970,7 +1999,18 @@ void AwesomePlayer::onVideoEvent() {
     if (wasSeeking == NO_SEEK) {
         // Let's display the first frame after seeking right away.
 
-        nowUs = ts->getRealTimeUs() - mTimeSourceDeltaUs;
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+        int64_t nowUs = ts->getRealTimeUs();
+
+        if (ts == (TimeSource*)&mSystemTimeSource) {
+            /* At end of audio stream, clock switches back to system clock.
+             * This keeps the timeline from having a big jump.
+             */
+            nowUs -= mTimeSourceDeltaUs;
+        }
+#else
+        nowUs = ts->getRealTimeUs() - mTimeSourceDeltaUs;;
+#endif
 
         latenessUs = nowUs - timeUs;
 
@@ -1996,7 +2036,11 @@ void AwesomePlayer::onVideoEvent() {
             mSeeking = SEEK_VIDEO_ONLY;
             mSeekTimeUs = mediaTimeUs;
 
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+            postVideoEvent_l(0);
+#else
             postVideoEvent_l();
+#endif
             return;
         }
 
@@ -2039,7 +2083,11 @@ void AwesomePlayer::onVideoEvent() {
 #endif
                 }
 
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+                postVideoEvent_l(0);
+#else
                 postVideoEvent_l();
+#endif
                 return;
             }
         }
@@ -2053,7 +2101,15 @@ void AwesomePlayer::onVideoEvent() {
                 mStats.mConsecutiveFramesDropped = 0;
             }
 #endif
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+            if (-latenessUs > 100000) {
+                postVideoEvent_l(10000);
+            } else {
+                postVideoEvent_l(latenessUs * -1);
+            }
+#else
             postVideoEvent_l(10000);
+#endif
             return;
         }
     }
@@ -2099,7 +2155,11 @@ void AwesomePlayer::onVideoEvent() {
         return;
     }
 
+#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
+    postVideoEvent_l(0);
+#else
     postVideoEvent_l();
+#endif
 }
 
 void AwesomePlayer::postVideoEvent_l(int64_t delayUs) {
