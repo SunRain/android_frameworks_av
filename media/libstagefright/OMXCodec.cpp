@@ -2216,8 +2216,13 @@ status_t OMXCodec::allocateOutputBuffersFromNativeWindow() {
 #ifndef EXYNOS4_ENHANCEMENTS
     err = native_window_set_buffers_geometry(
             mNativeWindow.get(),
+#ifdef QCOM_ICS_DECODERS
+            def.format.video.nStride,
+            def.format.video.nSliceHeight,
+#else
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
+#endif
 #ifdef QCOM_HARDWARE
             format
 #else
