@@ -1741,6 +1741,17 @@ status_t AwesomePlayer::initAudioDecoder() {
                     ) {
         ALOGD("Set Audio Track as Audio Source");
         mAudioSource = mAudioTrack;
+#ifdef OMAP_ENHANCEMENT
+    } else if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_WMA)) {
+        const char *componentName  = "OMX.ITTIAM.WMA.decode";
+        mAudioSource = OMXCodec::Create(
+        mClient.interface(), mAudioTrack->getFormat(),
+        false,
+        mAudioTrack, componentName);
+        if (mAudioSource == NULL) {
+            ALOGE("Failed to create OMX component for WMA codec");
+        }
+#endif
     } else {
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
@@ -1838,6 +1849,23 @@ status_t AwesomePlayer::initVideoDecoder(uint32_t flags) {
         flags |= OMXCodec::kEnableGrallocUsageProtected;
     }
 #endif
+
+#ifdef OMAP_ENHANCEMENT
+    sp<MetaData> fileMetadata = mExtractor->getMetaData();
+    bool isAvailable = fileMetadata->findCString(kKeyMIMEType, &mExtractorType);
+    bool have_delta_table = true;
+    if (!strcasecmp("video/mp4", mExtractorType)) {
+        struct MediaSourceWithHaveDeltaTable *msdt =
+                static_cast<MediaSourceWithHaveDeltaTable*>(mVideoTrack.get());
+        have_delta_table = msdt->haveDeltaTable();
+    }
+    if ((!have_delta_table) || isAvailable &&
+        (!strcasecmp(MEDIA_MIMETYPE_CONTAINER_ASF, mExtractorType)
+        || !strcasecmp(MEDIA_MIMETYPE_CONTAINER_AVI, mExtractorType))) {
+            flags |= OMXCodec::kEnableTimeStampInDecodeOrder;
+    }
+#endif
+
     ALOGV("initVideoDecoder flags=0x%x", flags);
     mVideoSource = OMXCodec::Create(
             mClient.interface(), mVideoTrack->getFormat(),

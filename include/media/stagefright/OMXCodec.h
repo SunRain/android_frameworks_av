@@ -72,6 +72,11 @@ struct OMXCodec : public MediaSource,
 
         kUseMinBufferCount = 32768,
 #endif
+
+#ifdef OMAP_ENHANCEMENT
+        // To request codec to return frames in decode order
+        kEnableTimeStampInDecodeOrder         = 512,
+#endif
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
