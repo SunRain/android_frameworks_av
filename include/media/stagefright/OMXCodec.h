@@ -72,6 +72,11 @@ struct OMXCodec : public MediaSource,
 
         kUseMinBufferCount = 32768,
 #endif
+
+#ifdef OMAP_ENHANCEMENT
+        // To request codec to return frames in decode order
+        kEnableTimeStampInDecodeOrder         = 512,
+#endif
     };
     static sp<MediaSource> Create(
             const sp<IOMX> &omx,
@@ -384,6 +389,10 @@ private:
             const void *data, size_t size,
             unsigned *profile, unsigned *level);
 
+#ifdef QCOM_HARDWARE
+    status_t flushBuffersOnError(void);
+#endif
+
     OMXCodec(const OMXCodec &);
     OMXCodec &operator=(const OMXCodec &);
 
@@ -401,6 +410,7 @@ public:
 #ifdef QCOM_HARDWARE
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
+    status_t releaseMediaBuffersOn(OMX_U32 portIndex);
 #endif
 };
 

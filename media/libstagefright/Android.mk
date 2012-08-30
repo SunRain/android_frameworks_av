@@ -1,6 +1,12 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+    ifeq ($(TARGET_BOARD_PLATFORM),msm8960)
+        LOCAL_CFLAGS += -DUSE_TUNNEL_MODE
+    endif
+endif
+
 include frameworks/av/media/libstagefright/codecs/common/Config.mk
 
 ifeq ($(TARGET_SOC),exynos4210)
@@ -72,11 +78,17 @@ endif
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
 LOCAL_SRC_FILES+=                         \
         ExtendedExtractor.cpp             \
-        ExtendedWriter.cpp
+        ExtendedWriter.cpp                \
+        LPAPlayerALSA.cpp                 \
+        TunnelPlayer.cpp
 
 ifeq ($(BOARD_HAVE_QCOM_FM),true)
 LOCAL_SRC_FILES+=                         \
         FMA2DPWriter.cpp
+endif
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+    LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/mm-audio/libalsa-intf
+    LOCAL_SHARED_LIBRARIES += libalsa-intf
 endif
 endif
 
@@ -138,6 +150,9 @@ LOCAL_STATIC_LIBRARIES := \
         libstagefright_id3 \
         libFLAC \
 
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+endif
+
 ifneq ($(TARGET_BUILD_PDK), true)
 LOCAL_STATIC_LIBRARIES += \
 	libstagefright_chromium_http
@@ -158,7 +173,10 @@ LOCAL_SHARED_LIBRARIES += \
 LOCAL_CFLAGS += -Wno-multichar
 
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
-        LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/display/libgralloc
+    LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/display/libgralloc
+    ifeq ($(BOARD_CAMERA_USE_MM_HEAP),true)
+        LOCAL_CFLAGS += -DCAMERA_MM_HEAP
+    endif
 endif
 
 ifeq ($(filter-out exynos4 exynos5,$(TARGET_BOARD_PLATFORM)),)

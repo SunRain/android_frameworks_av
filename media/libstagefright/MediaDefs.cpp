@@ -70,6 +70,7 @@ const char *MEDIA_MIMETYPE_AUDIO_EVRC = "audio/evrc";
 
 const char *MEDIA_MIMETYPE_VIDEO_DIVX = "video/divx";
 const char *MEDIA_MIMETYPE_AUDIO_AC3 = "audio/ac3";
+const char *MEDIA_MIMETYPE_AUDIO_EAC3 = "audio/eac3";
 const char *MEDIA_MIMETYPE_CONTAINER_AAC = "audio/aac";
 const char *MEDIA_MIMETYPE_CONTAINER_QCP = "audio/vnd.qcelp";
 const char *MEDIA_MIMETYPE_VIDEO_DIVX311 = "video/divx311";
