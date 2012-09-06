@@ -261,6 +261,7 @@ void AudioPlayer::resume() {
         mSourcePaused = false;
         mSource->start();
     }
+#endif
     if (mAudioSink.get() != NULL) {
         mAudioSink->start();
     } else {
