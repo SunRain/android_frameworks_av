@@ -255,6 +255,7 @@ AwesomePlayer::AwesomePlayer()
       mDecryptHandle(NULL),
       mLastVideoTimeUs(-1),
 #ifdef OMAP_ENHANCEMENT
+      mInitialBufferRead(true),
       mTextDriver(NULL),
       mExtractor(NULL),
       mExtractorType(NULL)
@@ -1753,10 +1754,31 @@ status_t AwesomePlayer::initAudioDecoder() {
         }
 #endif
     } else {
+#ifdef QCOM_HARDWARE
+        int64_t durationUs;
+        uint32_t flags = 0;
+        char lpaDecode[128];
+        property_get("lpa.decode",lpaDecode,"0");
+        if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
+            if (mDurationUs < 0 || durationUs > mDurationUs) {
+                mDurationUs = durationUs;
+            }
+        }
+        if ( mDurationUs > 60000000
+             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+             && LPAPlayer::objectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)) {
+
+            flags |= OMXCodec::kSoftwareCodecsOnly;
+        }
+#endif
         mAudioSource = OMXCodec::Create(
                 mClient.interface(), mAudioTrack->getFormat(),
                 false, // createEncoder
+#ifdef QCOM_HARDWARE
+                mAudioTrack, NULL, flags,NULL);
+#else
                 mAudioTrack);
+#endif
     }
 
     if (mAudioSource != NULL) {
@@ -1968,6 +1990,9 @@ void AwesomePlayer::finishSeekIfNecessary(int64_t videoTimeUs) {
 void AwesomePlayer::onVideoEvent() {
     ATRACE_CALL();
     Mutex::Autolock autoLock(mLock);
+#ifdef QCOM_HARDWARE
+    int mAudioSourcePaused = false;
+#endif
     if (!mVideoEventPending) {
         // The event has been cancelled in reset_l() but had already
         // been scheduled for execution at that time.
@@ -2022,6 +2047,9 @@ void AwesomePlayer::onVideoEvent() {
                 modifyFlags(AUDIO_RUNNING, CLEAR);
             }
             mAudioSource->pause();
+#ifdef QCOM_HARDWARE
+            mAudioSourcePaused = true;
+#endif
         }
     }
 
@@ -2035,6 +2063,20 @@ void AwesomePlayer::onVideoEvent() {
                     mSeeking == SEEK_VIDEO_ONLY
                         ? MediaSource::ReadOptions::SEEK_NEXT_SYNC
                         : MediaSource::ReadOptions::SEEK_CLOSEST_SYNC);
+
+#ifdef OMAP_ENHANCEMENT
+            if (mInitialBufferRead) {
+                mInitialBufferRead = false;
+
+                MediaBuffer *videoBuffer = NULL;
+                if (mVideoSource->read(&videoBuffer) == UNKNOWN_ERROR) {
+                    ALOGW("S3D Workaround: Extra read failed!");
+                }
+                if (videoBuffer != NULL) {
+                    videoBuffer->release();
+                }
+            }
+#endif
         }
         for (;;) {
             status_t err = mVideoSource->read(&mVideoBuffer, &options);
@@ -2063,6 +2105,12 @@ void AwesomePlayer::onVideoEvent() {
                 }
                 finishSeekIfNecessary(-1);
 
+#ifdef QCOM_HARDWARE
+                if (mAudioSourcePaused) {
+                    mAudioSource->start();
+                    mAudioSourcePaused = false;
+                }
+#endif
                 if (mAudioPlayer != NULL
                         && !(mFlags & (AUDIO_RUNNING | SEEK_PREVIEW))) {
                     startAudioPlayer_l();
@@ -2122,6 +2170,12 @@ void AwesomePlayer::onVideoEvent() {
     SeekType wasSeeking = mSeeking;
     finishSeekIfNecessary(timeUs);
 
+#ifdef QCOM_HARDWARE
+    if (mAudioSourcePaused) {
+        mAudioSource->start();
+        mAudioSourcePaused = false;
+    }
+#endif
     if (mAudioPlayer != NULL && !(mFlags & (AUDIO_RUNNING | SEEK_PREVIEW))) {
         status_t err = startAudioPlayer_l();
         if (err != OK) {
@@ -2279,7 +2333,8 @@ void AwesomePlayer::onVideoEvent() {
                 Mutex::Autolock autoLock(mStatsLock);
                 mStats.mConsecutiveFramesDropped = 0;
             }
-#endif
+            postVideoEvent_l(kVideoEarlyMarginUs - latenessUs);
+#else
 #if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
             if (-latenessUs > 100000) {
                 postVideoEvent_l(10000);
@@ -2288,6 +2343,7 @@ void AwesomePlayer::onVideoEvent() {
             }
 #else
             postVideoEvent_l(10000);
+#endif
 #endif
             return;
         }

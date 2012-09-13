@@ -157,6 +157,11 @@ private:
         EXECUTING_TO_IDLE,
         IDLE_TO_LOADED,
         RECONFIGURING,
+#ifdef QCOM_HARDWARE
+        PAUSING,
+        FLUSHING,
+        PAUSED,
+#endif
         ERROR
     };
 
@@ -411,6 +416,8 @@ public:
     status_t setWMAFormat(const sp<MetaData> &inputFormat);
     void setAC3Format(int32_t numChannels, int32_t sampleRate);
     status_t releaseMediaBuffersOn(OMX_U32 portIndex);
+
+    bool mNumBFrames;
 #endif
 };
 
