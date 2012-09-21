@@ -108,6 +108,7 @@
 #endif
 
 #define LPA_EOS 1
+static const char lockName[] = "DirectTrack";
 namespace android {
 
 static const char kDeadlockedString[] = "AudioFlinger may be deadlocked\n";
@@ -5757,8 +5758,8 @@ AudioFlinger::RecordThread::RecordTrack::RecordTrack(
     uint8_t channelCount = popcount(channelMask);
 #endif
     if (mCblk != NULL) {
-        ALOGV("RecordTrack constructor, size %d flags %d", (int)mBufferEnd - (int)mBuffer,flags);
 #ifdef QCOM_HARDWARE
+        ALOGV("RecordTrack constructor, size %d flags %d", (int)mBufferEnd - (int)mBuffer,flags);
         if ((audio_source_t)((int16_t)flags) == AUDIO_SOURCE_VOICE_COMMUNICATION) {
              mCblk->frameSize = mChannelCount * sizeof(int16_t);
         } else {
@@ -6200,6 +6201,8 @@ AudioFlinger::DirectAudioTrack::DirectAudioTrack(const sp<AudioFlinger>& audioFl
     LOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
     SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, true);
 #endif
+    mDeathRecipient = new PMDeathRecipient(this);
+    acquireWakeLock();
 }
 
 AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
@@ -6207,6 +6210,12 @@ AudioFlinger::DirectAudioTrack::~DirectAudioTrack() {
     LOGD("SRS_Processing - DirectAudioTrack - OutNotify_Init: %p TID %d\n", this, gettid());
     SRS_Processing::ProcessOutNotify(SRS_Processing::AUTO, this, false);
 #endif
+    releaseWakeLock();
+
+    if (mPowerManager != 0) {
+        sp<IBinder> binder = mPowerManager->asBinder();
+        binder->unlinkToDeath(mDeathRecipient);
+    }
     AudioSystem::releaseOutput(mOutput);
 }
 
@@ -6268,6 +6277,59 @@ status_t AudioFlinger::DirectAudioTrack::onTransact(
     uint32_t code, const Parcel& data, Parcel* reply, uint32_t flags)
 {
     return BnDirectTrack::onTransact(code, data, reply, flags);
+}
+
+void AudioFlinger::DirectAudioTrack::acquireWakeLock()
+{
+    Mutex::Autolock _l(pmLock);
+
+    if (mPowerManager == 0) {
+        // use checkService() to avoid blocking if power service is not up yet
+        sp<IBinder> binder =
+            defaultServiceManager()->checkService(String16("power"));
+        if (binder == 0) {
+            ALOGW("Thread %s cannot connect to the power manager service", lockName);
+        } else {
+            mPowerManager = interface_cast<IPowerManager>(binder);
+            binder->linkToDeath(mDeathRecipient);
+        }
+    }
+    if (mPowerManager != 0 && mWakeLockToken == 0) {
+        sp<IBinder> binder = new BBinder();
+        status_t status = mPowerManager->acquireWakeLock(POWERMANAGER_PARTIAL_WAKE_LOCK,
+                                                         binder,
+                                                         String16(lockName));
+        if (status == NO_ERROR) {
+            mWakeLockToken = binder;
+        }
+        ALOGV("acquireWakeLock() %s status %d", mName, status);
+    }
+}
+
+void AudioFlinger::DirectAudioTrack::releaseWakeLock()
+{
+   Mutex::Autolock _l(pmLock);
+
+    if (mWakeLockToken != 0) {
+        ALOGV("releaseWakeLock() %s", mName);
+        if (mPowerManager != 0) {
+            mPowerManager->releaseWakeLock(mWakeLockToken, 0);
+        }
+        mWakeLockToken.clear();
+    }
+}
+
+void AudioFlinger::DirectAudioTrack::clearPowerManager()
+{
+    Mutex::Autolock _l(pmLock);
+    releaseWakeLock();
+    mPowerManager.clear();
+}
+
+void AudioFlinger::DirectAudioTrack::PMDeathRecipient::binderDied(const wp<IBinder>& who)
+{
+    parentClass->clearPowerManager();
+    ALOGW("power manager service died !!!");
 }
 #endif
 
@@ -6417,26 +6479,34 @@ sp<IAudioRecord> AudioFlinger::openRecord(
         // frameCount must be a multiple of input buffer size
         // Change for Codec type
         uint8_t channelCount = popcount(channelMask);
-        if ((format == AUDIO_FORMAT_PCM_16_BIT) ||
-            (format == AUDIO_FORMAT_PCM_8_BIT))
-        {
-          inFrameCount = inputBufferSize/channelCount/sizeof(short);
-        }
-        else if (format == AUDIO_FORMAT_AMR_NB)
-        {
-          inFrameCount = inputBufferSize/channelCount/32;
-        }
-        else if (format == AUDIO_FORMAT_EVRC)
-        {
-          inFrameCount = inputBufferSize/channelCount/23;
-        }
-        else if (format == AUDIO_FORMAT_QCELP)
-        {
-          inFrameCount = inputBufferSize/channelCount/35;
-        }
-        else if (format == AUDIO_FORMAT_AAC)
-        {
-          inFrameCount = inputBufferSize/2048;
+        if ((audio_source_t)((int16_t)flags) == AUDIO_SOURCE_VOICE_COMMUNICATION) {
+             inFrameCount = inputBufferSize/channelCount/sizeof(short);
+        } else {
+            if ((format == AUDIO_FORMAT_PCM_16_BIT) ||
+                (format == AUDIO_FORMAT_PCM_8_BIT))
+            {
+              inFrameCount = inputBufferSize/channelCount/sizeof(short);
+            }
+            else if (format == AUDIO_FORMAT_AMR_NB)
+            {
+              inFrameCount = inputBufferSize/channelCount/32;
+            }
+            else if (format == AUDIO_FORMAT_EVRC)
+            {
+              inFrameCount = inputBufferSize/channelCount/23;
+            }
+            else if (format == AUDIO_FORMAT_QCELP)
+            {
+              inFrameCount = inputBufferSize/channelCount/35;
+            }
+            else if (format == AUDIO_FORMAT_AAC)
+            {
+              inFrameCount = inputBufferSize/2048;
+            }
+            else if (format == AUDIO_FORMAT_AMR_WB)
+            {
+              inFrameCount = inputBufferSize/channelCount/61;
+            }
         }
         frameCount = ((frameCount - 1)/inFrameCount + 1) * inFrameCount;
 #endif
