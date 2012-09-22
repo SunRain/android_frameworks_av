@@ -739,6 +739,10 @@ status_t CameraService::Client::startPreviewMode() {
     disableMsgType(CAMERA_MSG_COMPRESSED_BURST_IMAGE);
 #endif
 
+#ifdef OMAP_ICS_CAMERA
+    disableMsgType(CAMERA_MSG_FOCUS_MOVE);
+#endif
+
     mHardware->setPreviewWindow(mPreviewWindow);
     result = mHardware->startPreview();
 
@@ -914,6 +918,9 @@ status_t CameraService::Client::takePicture(int msgType) {
     }
 #ifdef QCOM_HARDWARE
     disableMsgType(CAMERA_MSG_PREVIEW_METADATA);
+#endif
+#ifdef OMAP_ICS_CAMERA
+    picMsgType |= CAMERA_MSG_FOCUS_MOVE;
 #endif
     enableMsgType(picMsgType);
 #ifdef QCOM_HARDWARE
@@ -1330,6 +1337,11 @@ void CameraService::Client::dataCallback(int32_t msgType,
             client->handleCompressedBurstPicture(dataPtr);
             break;
 #endif
+#ifdef OMAP_ICS_CAMERA
+        case CAMERA_MSG_FOCUS_MOVE:
+            client->handleCompressedBurstPicture(dataPtr);
+            break;
+#endif
         default:
             client->handleGenericData(msgType, dataPtr, metadata);
             break;
@@ -1467,7 +1479,7 @@ void CameraService::Client::handleCompressedPicture(const sp<IMemory>& mem) {
     }
 }
 
-#ifdef OMAP_ENHANCEMENT_BURST_CAPTURE
+#if defined(OMAP_ICS_CAMERA) || defined(OMAP_ENHANCEMENT_BURST_CAPTURE)
 // burst picture callback - compressed picture ready
 void CameraService::Client::handleCompressedBurstPicture(const sp<IMemory>& mem) {
     // Don't disable this message type yet. In this mode takePicture() will
