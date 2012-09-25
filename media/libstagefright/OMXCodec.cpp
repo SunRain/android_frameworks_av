@@ -304,6 +304,14 @@ uint32_t OMXCodec::getComponentQuirks(
                 index, "requies-loaded-to-idle-after-allocation")) {
       quirks |= kRequiresLoadedToIdleAfterAllocation;
     }
+    if (list->codecHasQuirk(
+                index, "avoid-memcopy-input-recording-frames")) {
+      quirks |= kAvoidMemcopyInputRecordingFrames;
+    }
+    if (list->codecHasQuirk(
+                index, "input-buffer-sizes-are-bogus")) {
+      quirks |= kInputBufferSizesAreBogus;
+    }
 #ifdef OMAP_ENHANCEMENT
     if (list->codecHasQuirk(
                 index, "needs-flush-before-disable")) {
@@ -314,14 +322,6 @@ uint32_t OMXCodec::getComponentQuirks(
         quirks |= kRequiresFlushCompleteEmulation;
     }
 #endif
-    if (list->codecHasQuirk(
-                index, "avoid-memcopy-input-recording-frames")) {
-      quirks |= kAvoidMemcopyInputRecordingFrames;
-    }
-    if (list->codecHasQuirk(
-                index, "input-buffer-sizes-are-bogus")) {
-      quirks |= kInputBufferSizesAreBogus;
-    }
 #ifdef QCOM_HARDWARE
     if (list->codecHasQuirk(
                 index, "requires-global-flush")) {
