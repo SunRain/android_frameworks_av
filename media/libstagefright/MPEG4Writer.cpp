@@ -236,11 +236,11 @@ private:
     void writeDrefBox();
     void writeDinfBox();
     void writeDamrBox();
-    void writeMdhdBox(time_t now);
+    void writeMdhdBox(uint32_t now);
     void writeSmhdBox();
     void writeVmhdBox();
     void writeHdlrBox();
-    void writeTkhdBox(time_t now);
+    void writeTkhdBox(uint32_t now);
     void writeMp4aEsdsBox();
     void writeMp4vEsdsBox();
     void writeAudioFourCCBox();
@@ -723,8 +723,17 @@ status_t MPEG4Writer::reset() {
     return err;
 }
 
-void MPEG4Writer::writeMvhdBox(int64_t durationUs) {
+uint32_t MPEG4Writer::getMpeg4Time() {
     time_t now = time(NULL);
+    // MP4 file uses time counting seconds since midnight, Jan. 1, 1904
+    // while time function returns Unix epoch values which starts
+    // at 1970-01-01. Lets add the number of seconds between them
+    uint32_t mpeg4Time = now + (66 * 365 + 17) * (24 * 60 * 60);
+    return mpeg4Time;
+}
+
+void MPEG4Writer::writeMvhdBox(int64_t durationUs) {
+    uint32_t now = getMpeg4Time();
     beginBox("mvhd");
     writeInt32(0);             // version=0, flags=0
     writeInt32(now);           // creation time
@@ -1917,6 +1926,83 @@ status_t MPEG4Writer::Track::threadEntry() {
             mGotAllCodecSpecificData = true;
             continue;
         }
+#ifdef OMAP_ENHANCEMENT
+        else if (mIsAvc && count < 3) {
+            size_t size = buffer->range_length();
+
+            switch (count) {
+                case 1:
+                {
+                    CHECK_EQ(mCodecSpecificData, (void *)NULL);
+                    mCodecSpecificData = malloc(size + 8);
+                    uint8_t *header = (uint8_t *)mCodecSpecificData;
+                    header[0] = 1;
+                    header[1] = 0x42;  // profile
+                    header[2] = 0x80;
+                    header[3] = 0x1e;  // level
+                    header[4] = 0xfc | 3;
+                    header[5] = 0xe0 | 1;
+                    header[6] = size >> 8;
+                    header[7] = size & 0xff;
+                    memcpy(&header[8],
+                            (const uint8_t *)buffer->data() + buffer->range_offset(),
+                            size);
+
+                    mCodecSpecificDataSize = size + 8;
+                    break;
+                }
+
+                case 2:
+                {
+                    size_t offset = mCodecSpecificDataSize;
+                    mCodecSpecificDataSize += size + 3;
+                    mCodecSpecificData = realloc(mCodecSpecificData, mCodecSpecificDataSize);
+                    uint8_t *header = (uint8_t *)mCodecSpecificData;
+                    header[offset] = 1;
+                    header[offset + 1] = size >> 8;
+                    header[offset + 2] = size & 0xff;
+                    memcpy(&header[offset + 3],
+                            (const uint8_t *)buffer->data() + buffer->range_offset(),
+                            size);
+                    break;
+                }
+            }
+
+            buffer->release();
+            buffer = NULL;
+
+            continue;
+
+        } else if (mCodecSpecificData == NULL && mIsMPEG4) {
+            const uint8_t *data =
+                (const uint8_t *)buffer->data() + buffer->range_offset();
+
+            const size_t size = buffer->range_length();
+
+            size_t offset = 0;
+            while (offset + 3 < size) {
+                if (data[offset] == 0x00 && data[offset + 1] == 0x00
+                    && data[offset + 2] == 0x01 && data[offset + 3] == 0xb6) {
+                    break;
+                }
+
+                ++offset;
+            }
+
+            // CHECK(offset + 3 < size);
+            if (offset + 3 >= size) {
+                // XXX assume the entire first chunk of data is the codec specific
+                // data.
+                offset = size;
+            }
+
+            mCodecSpecificDataSize = offset;
+            mCodecSpecificData = malloc(offset);
+            memcpy(mCodecSpecificData, data, offset);
+
+            buffer->set_range(buffer->range_offset() + offset, size - offset);
+        }
+#endif
 
         // Make a deep copy of the MediaBuffer and Metadata and release
         // the original as soon as we can
@@ -1979,7 +2065,9 @@ status_t MPEG4Writer::Track::threadEntry() {
         }
 
         timestampUs -= previousPausedDurationUs;
+#ifndef OMAP_ENHANCEMENT
         CHECK_GE(timestampUs, 0ll);
+#endif
         if (!mIsAudio) {
             /*
              * Composition time: timestampUs
@@ -2361,7 +2449,7 @@ void MPEG4Writer::Track::writeTrackHeader(bool use32BitOffset) {
     ALOGV("%s track time scale: %d",
         mIsAudio? "Audio": "Video", mTimeScale);
 
-    time_t now = time(NULL);
+    uint32_t now = getMpeg4Time();
     mOwner->beginBox("trak");
         writeTkhdBox(now);
         mOwner->beginBox("mdia");
@@ -2574,7 +2662,7 @@ void MPEG4Writer::Track::writeMp4vEsdsBox() {
     mOwner->endBox();  // esds
 }
 
-void MPEG4Writer::Track::writeTkhdBox(time_t now) {
+void MPEG4Writer::Track::writeTkhdBox(uint32_t now) {
     mOwner->beginBox("tkhd");
     // Flags = 7 to indicate that the track is enabled, and
     // part of the presentation
@@ -2643,7 +2731,7 @@ void MPEG4Writer::Track::writeHdlrBox() {
     mOwner->endBox();
 }
 
-void MPEG4Writer::Track::writeMdhdBox(time_t now) {
+void MPEG4Writer::Track::writeMdhdBox(uint32_t now) {
     int64_t trakDurationUs = getDurationUs();
     mOwner->beginBox("mdhd");
     mOwner->writeInt32(0);             // version=0, flags=0
