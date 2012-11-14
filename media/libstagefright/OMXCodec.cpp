@@ -886,9 +886,10 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
 
     int32_t maxInputSize;
     if (meta->findInt32(kKeyMaxInputSize, &maxInputSize)) {
+      ALOGD("mComponentName is : [%s] size is %d ", mComponentName, sizeof(mComponentName));
 #ifdef OMAP_ENHANCEMENT
-        if(!strcmp("OMX.TI.DUCATI1.VIDEO.DECODER", mComponentName)) {
-            mInputMinBufferSize = maxInputSize;
+        if(!strcmp(mComponentName, "OMX.TI.DUCATI1.VIDEO.DECODER")) {
+            mInputMinBufferSize = maxInputSize/2;
             ALOGE("set buffer size variable to : %d",maxInputSize);
         } else {
 #endif
