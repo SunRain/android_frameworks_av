@@ -240,10 +240,6 @@ private:
     sp<WVMExtractor> mWVMExtractor;
     sp<MediaExtractor> mExtractor;
 
-#ifdef OMAP_ENHANCEMENT
-    bool mInitialBufferRead;
-#endif
-
     status_t setDataSource_l(
             const char *uri,
             const KeyedVector<String8, String8> *headers = NULL);
@@ -387,10 +383,6 @@ private:
 
     AwesomePlayer(const AwesomePlayer &);
     AwesomePlayer &operator=(const AwesomePlayer &);
-
-#ifdef OMAP_ENHANCEMENT
-    const char* mExtractorType;
-#endif
 };
 
 }  // namespace android

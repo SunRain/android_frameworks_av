@@ -30,9 +30,6 @@
 #include <media/stagefright/MetaData.h>
 
 #include "include/AwesomePlayer.h"
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-#include "include/TimeInterpolator.h"
-#endif
 
 namespace android {
 
@@ -62,12 +59,7 @@ AudioPlayer::AudioPlayer(
       mAudioSink(audioSink),
       mAllowDeepBuffering(allowDeepBuffering),
       mObserver(observer),
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-      mPinnedTimeUs(-1ll),
-      mRealTimeInterpolator(new TimeInterpolator) {
-#else
       mPinnedTimeUs(-1ll) {
-#endif
 }
 
 AudioPlayer::~AudioPlayer() {
@@ -206,11 +198,6 @@ status_t AudioPlayer::start(bool sourceAlreadyStarted) {
         mAudioTrack->start();
     }
 
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    ALOGI("mLatencyUs = %lld", mLatencyUs);
-    mRealTimeInterpolator->set_latency(mLatencyUs);
-#endif
-
     mStarted = true;
     mPinnedTimeUs = -1ll;
 
@@ -227,9 +214,6 @@ void AudioPlayer::pause(bool playPendingSamples) {
             mAudioTrack->stop();
         }
 
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-        mRealTimeInterpolator->stop();
-#endif
         mNumFramesPlayed = 0;
         mNumFramesPlayedSysTimeUs = ALooper::GetNowUs();
     } else {
@@ -240,9 +224,6 @@ void AudioPlayer::pause(bool playPendingSamples) {
         }
 
         mPinnedTimeUs = ALooper::GetNowUs();
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-        mRealTimeInterpolator->pause();
-#endif
     }
 #ifdef QCOM_HARDWARE
     CHECK(mSource != NULL);
@@ -254,11 +235,6 @@ void AudioPlayer::pause(bool playPendingSamples) {
 
 void AudioPlayer::resume() {
     CHECK(mStarted);
-
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    mRealTimeInterpolator->resume();
-#endif
-
 #ifdef QCOM_HARDWARE
     CHECK(mSource != NULL);
     if (mSourcePaused == true) {
@@ -324,9 +300,6 @@ void AudioPlayer::reset() {
     mReachedEOS = false;
     mFinalStatus = OK;
     mStarted = false;
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    mRealTimeInterpolator->reset();
-#endif
 }
 
 // static
@@ -416,13 +389,6 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
     bool postSeekComplete = false;
     bool postEOS = false;
     int64_t postEOSDelayUs = 0;
-
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    mRealTimeInterpolator->post_buffer(
-        TimeInterpolator::bytes_to_usecs(size, mFrameSize, mSampleRate)
-        );
-    mPositionTimeRealUs = mRealTimeInterpolator->get_stream_usecs();
-#endif
 
     size_t size_done = 0;
     size_t size_remaining = size;
@@ -524,11 +490,9 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
             CHECK(mInputBuffer->meta_data()->findInt64(
                         kKeyTime, &mPositionTimeMediaUs));
 
-#if ! (defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR))
             mPositionTimeRealUs =
                 ((mNumFramesPlayed + size_done / mFrameSize) * 1000000)
                     / mSampleRate;
-#endif
 
             ALOGV("buffer->size() = %d, "
                  "mPositionTimeMediaUs=%.2f mPositionTimeRealUs=%.2f",
@@ -584,11 +548,7 @@ size_t AudioPlayer::fillBuffer(void *data, size_t size) {
 
 int64_t AudioPlayer::getRealTimeUs() {
     Mutex::Autolock autoLock(mLock);
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    return mRealTimeInterpolator->get_stream_usecs();
-#else
     return getRealTimeUsLocked();
-#endif
 }
 
 int64_t AudioPlayer::getRealTimeUsLocked() const {
@@ -637,25 +597,11 @@ int64_t AudioPlayer::getMediaTimeUs() {
     return mPositionTimeMediaUs + realTimeOffset;
 }
 
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-int64_t AudioPlayer::latency() const
-{
-    return mLatencyUs;
-}
-#endif
-
 bool AudioPlayer::getMediaTimeMapping(
         int64_t *realtime_us, int64_t *mediatime_us) {
     Mutex::Autolock autoLock(mLock);
 
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    /* AwesomePlayer wants to make sure that the read pointer in
-     * the codec is close to what the buffer "read pointer" is.
-     */
-    *realtime_us = mRealTimeInterpolator->read_pointer();
-#else
     *realtime_us = mPositionTimeRealUs;
-#endif
     *mediatime_us = mPositionTimeMediaUs;
 
     return mPositionTimeRealUs != -1 && mPositionTimeMediaUs != -1;
@@ -668,9 +614,6 @@ status_t AudioPlayer::seekTo(int64_t time_us) {
     mPositionTimeRealUs = mPositionTimeMediaUs = -1;
     mReachedEOS = false;
     mSeekTimeUs = time_us;
-#if defined(OMAP_ENHANCEMENT) && defined(OMAP_TIME_INTERPOLATOR)
-    mRealTimeInterpolator->seek(time_us);
-#endif
 
     // Flush resets the number of played frames
     mNumFramesPlayed = 0;

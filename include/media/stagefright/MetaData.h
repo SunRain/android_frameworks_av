@@ -56,9 +56,6 @@ enum {
     kKeyAACProfile        = 'aacp',  // int32_t
     kKeyAacCodecSpecificData = 'nacc' , // for native aac files
     kKeyAVCC              = 'avcc',  // raw data
-#ifdef OMAP_ENHANCEMENT
-    kKeyHdr               = 'hdrd',  // raw data
-#endif
     kKeyD263              = 'd263',  // raw data
     kKeyVorbisInfo        = 'vinf',  // raw data
     kKeyVorbisBooks       = 'vboo',  // raw data
@@ -155,9 +152,7 @@ enum {
     kkeyAacFormatLtp      = 'ltp',
 
     kKeyRequiresSecureBuffers = 'secu',  // bool (int32_t)
-#ifdef OMAP_ENHANCEMENT
-    kKeyVideoFPS          = 'vfps', // int32_t
-#endif
+
     kKeyIsADTS            = 'adts',  // bool (int32_t)
 
     // If a MediaBuffer's data represents (at least partially) encrypted
@@ -191,21 +186,11 @@ enum {
     //Extractor sets this
     kKeyUseArbitraryMode  = 'ArbM'  //bool (int32_t)
 #endif
-#ifdef OMAP_ENHANCEMENT
-    kKeyBufferLayout      = 'lout',
-#endif
-#ifdef OMAP_ENHANCEMENT_S3D
-    kKeyS3DLayout         = 's3dl',
-#endif
-
 };
 
 enum {
     kTypeESDS        = 'esds',
     kTypeAVCC        = 'avcc',
-#ifdef OMAP_ENHANCEMENT
-    kTypeHdr         = 'hdrd',
-#endif
     kTypeD263        = 'd263',
 };
 enum {

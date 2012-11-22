@@ -236,11 +236,11 @@ private:
     void writeDrefBox();
     void writeDinfBox();
     void writeDamrBox();
-    void writeMdhdBox(uint32_t now);
+    void writeMdhdBox(time_t now);
     void writeSmhdBox();
     void writeVmhdBox();
     void writeHdlrBox();
-    void writeTkhdBox(uint32_t now);
+    void writeTkhdBox(time_t now);
     void writeMp4aEsdsBox();
     void writeMp4vEsdsBox();
     void writeAudioFourCCBox();
@@ -723,17 +723,8 @@ status_t MPEG4Writer::reset() {
     return err;
 }
 
-uint32_t MPEG4Writer::getMpeg4Time() {
-    time_t now = time(NULL);
-    // MP4 file uses time counting seconds since midnight, Jan. 1, 1904
-    // while time function returns Unix epoch values which starts
-    // at 1970-01-01. Lets add the number of seconds between them
-    uint32_t mpeg4Time = now + (66 * 365 + 17) * (24 * 60 * 60);
-    return mpeg4Time;
-}
-
 void MPEG4Writer::writeMvhdBox(int64_t durationUs) {
-    uint32_t now = getMpeg4Time();
+    time_t now = time(NULL);
     beginBox("mvhd");
     writeInt32(0);             // version=0, flags=0
     writeInt32(now);           // creation time
@@ -2449,7 +2440,7 @@ void MPEG4Writer::Track::writeTrackHeader(bool use32BitOffset) {
     ALOGV("%s track time scale: %d",
         mIsAudio? "Audio": "Video", mTimeScale);
 
-    uint32_t now = getMpeg4Time();
+    time_t now = time(NULL);
     mOwner->beginBox("trak");
         writeTkhdBox(now);
         mOwner->beginBox("mdia");
@@ -2662,7 +2653,7 @@ void MPEG4Writer::Track::writeMp4vEsdsBox() {
     mOwner->endBox();  // esds
 }
 
-void MPEG4Writer::Track::writeTkhdBox(uint32_t now) {
+void MPEG4Writer::Track::writeTkhdBox(time_t now) {
     mOwner->beginBox("tkhd");
     // Flags = 7 to indicate that the track is enabled, and
     // part of the presentation
@@ -2731,7 +2722,7 @@ void MPEG4Writer::Track::writeHdlrBox() {
     mOwner->endBox();
 }
 
-void MPEG4Writer::Track::writeMdhdBox(uint32_t now) {
+void MPEG4Writer::Track::writeMdhdBox(time_t now) {
     int64_t trakDurationUs = getDurationUs();
     mOwner->beginBox("mdhd");
     mOwner->writeInt32(0);             // version=0, flags=0
