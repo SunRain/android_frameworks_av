@@ -99,7 +99,6 @@ endif
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
-        $(TOP)/frameworks/native/include/media/openmax \
         $(TOP)/external/expat/lib \
         $(TOP)/external/flac/include \
         $(TOP)/external/tremolo \
@@ -164,6 +163,13 @@ LOCAL_SHARED_LIBRARIES += \
 
 LOCAL_CFLAGS += -Wno-multichar
 
+ifneq ($(TI_CUSTOM_DOMX_PATH),)
+LOCAL_C_INCLUDES += $(TI_CUSTOM_DOMX_PATH)/omx_core/inc
+LOCAL_CPPFLAGS += -DUSE_TI_CUSTOM_DOMX
+else
+LOCAL_C_INCLUDES += $(TOP)/frameworks/native/include/media/openmax
+endif
+			
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
     LOCAL_C_INCLUDES += $(TOP)/hardware/qcom/display/libgralloc
     ifeq ($(BOARD_CAMERA_USE_MM_HEAP),true)

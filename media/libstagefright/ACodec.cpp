@@ -33,8 +33,13 @@
 #include <media/stagefright/OMXCodec.h>
 
 #include <OMX_Component.h>
+
 #ifdef EXYNOS4_ENHANCEMENTS
 #include "sec_format.h"
+#endif
+
+#ifdef USE_TI_CUSTOM_DOMX
+#include <OMX_TI_IVCommon.h>
 #endif
 
 namespace android {

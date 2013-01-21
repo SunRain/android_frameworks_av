@@ -56,6 +56,13 @@ Copyright (c) 2012, Code Aurora Forum. All rights reserved.
 #include <OMX_QCOMExtns.h>
 #endif
 
+#ifdef USE_TI_CUSTOM_DOMX
+#include <OMX_TI_Video.h>
+#include <OMX_TI_Index.h>
+#include <OMX_TI_IVCommon.h>
+#include <ctype.h>
+#endif
+
 namespace android {
 
 #ifdef EXYNOS4_ENHANCEMENTS
