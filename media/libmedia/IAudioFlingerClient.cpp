@@ -51,7 +51,6 @@ public:
                 uint32_t stream = *(const uint32_t *)param2;
                 ALOGV("ioConfigChanged stream %d", stream);
                 data.writeInt32(stream);
-
             } else if (event != AudioSystem::OUTPUT_CLOSED
                        && event != AudioSystem::INPUT_CLOSED
 #ifdef QCOM_HARDWARE

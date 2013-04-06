@@ -49,10 +49,6 @@ enum {
     RECORDING_ENABLED,
     RELEASE_RECORDING_FRAME,
     STORE_META_DATA_IN_BUFFERS,
-#ifdef OMAP_ENHANCEMENT_CPCAM
-    SET_BUFFER_SOURCE,
-    REPROCESS,
-#endif
 };
 
 class BpCamera: public BpInterface<ICamera>
@@ -206,19 +202,12 @@ public:
     }
 
     // take a picture - returns an IMemory (ref-counted mmap)
-#ifdef OMAP_ENHANCEMENT_CPCAM
-    status_t takePicture(int msgType, const String8& params)
-#else
     status_t takePicture(int msgType)
-#endif
     {
         ALOGV("takePicture: 0x%x", msgType);
         Parcel data, reply;
         data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
         data.writeInt32(msgType);
-#ifdef OMAP_ENHANCEMENT_CPCAM
-        data.writeString8(params);
-#endif
         remote()->transact(TAKE_PICTURE, data, &reply);
         status_t ret = reply.readInt32();
         return ret;
@@ -244,7 +233,6 @@ public:
         remote()->transact(GET_PARAMETERS, data, &reply);
         return reply.readString8();
     }
-
     virtual status_t sendCommand(int32_t cmd, int32_t arg1, int32_t arg2)
     {
         ALOGV("sendCommand");
@@ -278,35 +266,6 @@ public:
         remote()->transact(UNLOCK, data, &reply);
         return reply.readInt32();
     }
-
-#ifdef OMAP_ENHANCEMENT_CPCAM
-    // pass the buffered SurfaceTexture to the camera service
-    // TODO(XX): Find a good name for this tap-in/tap-out buffer source
-    status_t setBufferSource(const sp<ISurfaceTexture>& tapin,
-                             const sp<ISurfaceTexture>& tapout)
-    {
-        ALOGV("setBufferSource");
-        Parcel data, reply;
-        data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
-        data.writeStrongBinder(tapin->asBinder());
-        data.writeStrongBinder(tapout->asBinder());
-        remote()->transact(SET_BUFFER_SOURCE, data, &reply);
-        return reply.readInt32();
-    }
-
-    // take a picture - returns an IMemory (ref-counted mmap)
-    status_t reprocess(int msgType, const String8& params)
-    {
-        ALOGV("reprocess: 0x%x", msgType);
-        Parcel data, reply;
-        data.writeInterfaceToken(ICamera::getInterfaceDescriptor());
-        data.writeInt32(msgType);
-        data.writeString8(params);
-        remote()->transact(REPROCESS, data, &reply);
-        status_t ret = reply.readInt32();
-        return ret;
-    }
-#endif
 };
 
 IMPLEMENT_META_INTERFACE(Camera, "android.hardware.ICamera");
@@ -410,12 +369,7 @@ status_t BnCamera::onTransact(
             ALOGV("TAKE_PICTURE");
             CHECK_INTERFACE(ICamera, data, reply);
             int msgType = data.readInt32();
-#ifdef OMAP_ENHANCEMENT_CPCAM
-            String8 params(data.readString8());
-            reply->writeInt32(takePicture(msgType, params));
-#else
             reply->writeInt32(takePicture(msgType));
-#endif
             return NO_ERROR;
         } break;
         case SET_PARAMETERS: {
@@ -440,24 +394,6 @@ status_t BnCamera::onTransact(
             reply->writeInt32(sendCommand(command, arg1, arg2));
             return NO_ERROR;
          } break;
-#ifdef OMAP_ENHANCEMENT_CPCAM
-        case SET_BUFFER_SOURCE: {
-            ALOGV("SET_BUFFER_SOURCE");
-            CHECK_INTERFACE(ICamera, data, reply);
-            sp<ISurfaceTexture> tapin = interface_cast<ISurfaceTexture>(data.readStrongBinder());
-            sp<ISurfaceTexture> tapout = interface_cast<ISurfaceTexture>(data.readStrongBinder());
-            reply->writeInt32(setBufferSource(tapin, tapout));
-            return NO_ERROR;
-        } break;
-        case REPROCESS: {
-            ALOGV("REPROCESS");
-            CHECK_INTERFACE(ICamera, data, reply);
-            int msgType = data.readInt32();
-            String8 params(data.readString8());
-            reply->writeInt32(reprocess(msgType, params));
-            return NO_ERROR;
-        } break;
-#endif
         case CONNECT: {
             CHECK_INTERFACE(ICamera, data, reply);
             sp<ICameraClient> cameraClient = interface_cast<ICameraClient>(data.readStrongBinder());

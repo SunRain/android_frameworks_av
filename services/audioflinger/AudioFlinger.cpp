@@ -1919,9 +1919,6 @@ AudioFlinger::PlaybackThread::PlaybackThread(const sp<AudioFlinger>& audioFlinge
         // but it would be safer to explicitly pass initial masterMute as parameter
         mMasterMute(audioFlinger->masterMute_l()),
         // mStreamTypes[] initialized in constructor body
-#ifdef OMAP_ENHANCEMENT
-        mFmInplay(false),
-#endif
         mOutput(output),
         // Assumes constructor is called by AudioFlinger with it's mLock held,
         // but it would be safer to explicitly pass initial masterVolume as parameter
@@ -2098,11 +2095,7 @@ sp<AudioFlinger::PlaybackThread::Track> AudioFlinger::PlaybackThread::createTrac
         }
     } else {
         // Resampler implementation limits input sampling rate to 2 x output sampling rate.
-#ifdef OMAP_ENHANCEMENT
-        if (AudioResampler::checkRate(mSampleRate, sampleRate)) {
-#else
         if (sampleRate > mSampleRate*2) {
-#endif
             ALOGE("Sample rate out of range: %d mSampleRate %d", sampleRate, mSampleRate);
             lStatus = BAD_VALUE;
             goto Exit;
@@ -2491,14 +2484,6 @@ status_t AudioFlinger::PlaybackThread::getRenderPosition(uint32_t *halFrames, ui
     return mOutput->stream->get_render_position(mOutput->stream, dspFrames);
 }
 
-#ifdef OMAP_ENHANCEMENT
-status_t AudioFlinger::PlaybackThread::setFMRxActive(bool state)
-{
-    ALOGI("AudioFlinger::PlaybackThread::setFMRxActive,state =%x",state);
-    mFmInplay = state;
-    return NO_ERROR;
-}
-#endif
 uint32_t AudioFlinger::PlaybackThread::hasAudioSession(int sessionId)
 {
     Mutex::Autolock _l(mLock);
@@ -2975,11 +2960,7 @@ if (mType == MIXER) {
             // put audio hardware into standby after short delay
             if (CC_UNLIKELY((!mActiveTracks.size() && systemTime() > standbyTime) ||
                         mSuspended > 0)) {
-#ifdef OMAP_ENHANCEMENT
-                if (!mStandby && !mFmInplay) {
-#else
                 if (!mStandby) {
-#endif
 
                     threadLoop_standby();
 
@@ -3976,19 +3957,10 @@ bool AudioFlinger::MixerThread::checkForNewParameters_l()
                     int name = getTrackName_l((audio_channel_mask_t)mTracks[i]->mChannelMask);
                     if (name < 0) break;
                     mTracks[i]->mName = name;
-#ifdef OMAP_ENHANCEMENT
-                    if (AudioResampler::checkRate(sampleRate(),
-                            mTracks[i]->mCblk->sampleRate)) {
-                        mTracks[i]->mCblk->sampleRate =
-                            AudioResampler::checkRate(sampleRate(),
-                                mTracks[i]->mCblk->sampleRate);
-                    }
-#else
                     // limit track sample rate to 2 x new output sample rate
                     if (mTracks[i]->mCblk->sampleRate > 2 * sampleRate()) {
                         mTracks[i]->mCblk->sampleRate = 2 * sampleRate();
                     }
-#endif
                 }
                 sendConfigEvent_l(AudioSystem::OUTPUT_CONFIG_CHANGED);
             }
@@ -7532,12 +7504,7 @@ bool AudioFlinger::RecordThread::checkForNewParameters_l()
                 if (status == BAD_VALUE &&
                     reqFormat == mInput->stream->common.get_format(&mInput->stream->common) &&
                     reqFormat == AUDIO_FORMAT_PCM_16_BIT &&
-#ifdef OMAP_ENHANCEMENT
-                    !AudioResampler::checkRate(reqSamplingRate,
-                        (int)mInput->stream->common.get_sample_rate(&mInput->stream->common)) &&
-#else
                     ((int)mInput->stream->common.get_sample_rate(&mInput->stream->common) <= (2 * reqSamplingRate)) &&
-#endif
 #ifdef QCOM_HARDWARE
                     getInputChannelCount(mInput->stream->common.get_channels(&mInput->stream->common)) <= FCC_2 &&
 #else
@@ -8096,11 +8063,7 @@ audio_io_handle_t AudioFlinger::openInput(audio_module_handle_t module,
     // or stereo to mono conversions on 16 bit PCM inputs.
     if (status == BAD_VALUE &&
         reqFormat == config.format && config.format == AUDIO_FORMAT_PCM_16_BIT &&
-#ifdef OMAP_ENHANCEMENT
-        !AudioResampler::checkRate(reqSamplingRate, config.sample_rate) &&
-#else
         (config.sample_rate <= 2 * reqSamplingRate) &&
-#endif
 #ifdef QCOM_HARDWARE
         (getInputChannelCount(config.channel_mask) <= FCC_2) && (getInputChannelCount(reqChannels) <= FCC_2))
 #else
@@ -8208,21 +8171,6 @@ status_t AudioFlinger::setStreamOutput(audio_stream_type_t stream, audio_io_hand
     return NO_ERROR;
 }
 
-#ifdef OMAP_ENHANCEMENT
-status_t AudioFlinger::setFMRxActive(bool state)
-{
-    ALOGI("setFMRxActive() ");
-    // check calling permissions
-    if (!settingsAllowed()) {
-        return PERMISSION_DENIED;
-    }
-
-    for (uint32_t i = 0; i < mPlaybackThreads.size(); i++)
-        mPlaybackThreads.valueAt(i)->setFMRxActive(state);
-
-    return NO_ERROR;
-}
-#endif
 
 int AudioFlinger::newAudioSessionId()
 {
