@@ -75,6 +75,12 @@ LOCAL_SRC_FILES +=  AVIExtractor.cpp
 LOCAL_SRC_FILES += TimeInterpolator.cpp
 endif
 
+ifeq ($(BOARD_USES_STE_FMRADIO),true)
+LOCAL_SRC_FILES+=                         \
+        FMRadioSource.cpp                 \
+        PCMExtractor.cpp
+endif
+
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
 LOCAL_SRC_FILES+=                         \
         ExtendedExtractor.cpp             \

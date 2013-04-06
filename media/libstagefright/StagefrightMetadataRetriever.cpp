@@ -505,7 +505,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
             && (!strncmp(value, "msm8660", sizeof("msm8660") - 1) ||
                 !strncmp(value, "msm8960", sizeof("msm8960") - 1) ||
                 !strncmp(value, "msm7x27a", sizeof("msm7x27a") - 1) ||
-                !strncmp(value, "msm7630", sizeof("msm7630") - 1) )) {
+                !strncmp(value, "msm7x30", sizeof("msm7x30") - 1) )) {
             flags |= OMXCodec::kEnableThumbnailMode | OMXCodec::kHardwareCodecsOnly;
         }
 #endif
@@ -555,7 +555,7 @@ const char *StagefrightMetadataRetriever::extractMetadata(int keyCode) {
         return NULL;
     }
 
-    return strdup(mMetaData.valueAt(index).string());
+    return mMetaData.valueAt(index).string();
 }
 
 void StagefrightMetadataRetriever::parseMetaData() {
